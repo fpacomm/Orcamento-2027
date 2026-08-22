@@ -100,16 +100,24 @@
   .legend{display:flex; gap:16px; align-items:center; font-size:11.5px; color:var(--text-soft); margin:0 0 14px; flex-wrap:wrap;}
   .swatch{display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:5px; vertical-align:middle; border:1px solid rgba(0,0,0,.08);}
 
-  .table-wrap{overflow-x:auto; background:var(--card); border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow);}
+  .table-wrap{overflow-x:auto; overflow-y:hidden; background:var(--card); border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow);}
   table{border-collapse:collapse; width:100%; font-size:12px; min-width:900px;}
   th,td{padding:7px 9px; border-bottom:1px solid #eef0f2; text-align:right; white-space:nowrap;}
-  th{position:sticky; top:0; z-index:2; font-size:10.5px; text-transform:uppercase; letter-spacing:.3px;}
+  /* IMPORTANTE: position:sticky diretamente em <thead> quebrou o layout da tabela em teste real
+     (células deixaram de se alinhar em colunas, cabeçalho saiu de ordem). Removido por segurança —
+     a tabela agora rola normalmente, sem cabeçalho fixo, até acharmos uma técnica confiável. */
+  th{font-size:10.5px; text-transform:uppercase; letter-spacing:.3px;}
   td.label, th.label{text-align:left; position:sticky; left:0; z-index:1; min-width:190px; max-width:250px; white-space:normal; background:#fff; font-weight:600;}
+  thead th.label{z-index:6;}
   th.label{z-index:3;}
 
   th.head-2026{background:var(--gray); color:#fff;}
   th.head-2027{background:var(--amber); color:var(--dark);}
   th.year-label{font-size:18px !important; font-weight:900; letter-spacing:.4px; text-transform:none; padding-top:9px; padding-bottom:9px;}
+  th.src-label{font-size:9px; font-weight:700; letter-spacing:.3px; padding-top:4px; padding-bottom:4px; text-transform:uppercase;}
+  th.src-realizado{background:#43494f; color:#fff;}
+  th.src-orcado{background:#e9edf1; color:#3a3f45;}
+  th.src-orcado27{background:#f4dd9a; color:#4a3600;}
   th.head-dark{background:var(--dark); color:#fff;}
 
   tr.subtotal td{background:var(--total-bg); font-weight:800; color:var(--dark);}
@@ -117,12 +125,23 @@
   td.locked{background:var(--locked-bg); color:var(--locked-text);}
   td.orcado2026{background:var(--white-cell); color:var(--dark);}
   td.editcell{background:var(--edit-bg); padding:2px;}
-  td.editcell input{width:78px; text-align:right; border:1px solid var(--edit-border); background:#fffef7; border-radius:5px; padding:5px 6px; font-family:inherit; font-size:11.5px;}
+  .editcell-inner{display:flex; align-items:center; gap:2px;}
+  td.editcell input{width:66px; text-align:right; border:1px solid var(--edit-border); background:#fffef7; border-radius:5px; padding:5px 6px; font-family:inherit; font-size:11.5px;}
   td.editcell input:focus{outline:2px solid var(--amber-deep); background:#fff;}
+  .replicate-btn{border:1px solid transparent; background:rgba(201,143,0,.12); color:var(--amber-deep); cursor:pointer; font-size:12px; padding:3px 5px; flex:none; border-radius:4px; font-weight:900; line-height:1;}
+  .replicate-btn:hover{background:var(--amber-deep); color:#fff;}
+  a.resumo-link{color:var(--dark); text-decoration:none; border-bottom:1px dashed #b9bcc2;}
+  a.resumo-link:hover{color:var(--amber-deep); border-bottom-color:var(--amber-deep);}
+  @keyframes rowFlash{0%{background:#fff3c4;} 100%{background:transparent;}}
+  tr.row-flash td{animation: rowFlash 1.8s ease-out;}
   td.total2027{background:#FDECC8; font-weight:800; color:var(--amber-deep);}
   td.total2026col{background:var(--total-bg); font-weight:800;}
   .new-row td.label{color:var(--amber-deep);}
   .new-tag{font-size:9.5px; background:var(--amber); color:var(--dark); border-radius:4px; padding:1px 5px; margin-left:6px; font-weight:800;}
+  .rateio-flag{display:block; font-size:10px; font-weight:600; color:var(--text-soft); margin-top:3px; cursor:pointer; user-select:none;}
+  .rateio-flag input{margin-right:3px; vertical-align:middle; cursor:pointer;}
+  tr[data-is-rateio="1"] td.label{color:#8a5a00;}
+  tr[data-is-rateio="1"] .rateio-flag{color:var(--amber-deep); font-weight:800;}
 
   .hint{font-size:11.5px; color:var(--text-soft); margin:10px 2px 0;}
   .fornecedor{color:var(--text-soft); font-weight:500; font-size:11px; display:block;}
@@ -207,9 +226,7 @@
   <nav class="navlist" id="tabsBar">
     <div class="navlabel">Planejamento</div>
     <button class="navbtn active" data-tab="resumo"><span class="ic"></span> Resumo</button>
-    <button class="navbtn" data-tab="demais"><span class="ic"></span> Demais Despesas Diretas</button>
-    <button class="navbtn" data-tab="rh"><span class="ic"></span> Serviços de RH</button>
-    <button class="navbtn" data-tab="sc"><span class="ic"></span> Serviços Contratados</button>
+    <span id="dynamicNavSlot"></span>
     <div class="navlabel">Sistema</div>
     <button class="navbtn" data-tab="config"><span class="ic" style="border-radius:2px;"></span> Configurações</button>
   </nav>
@@ -236,11 +253,14 @@
       <div class="section-head">
         <div>
           <h2>Resumo <span class="area-badge" id="areaBadgeResumo" style="vertical-align:middle; margin-left:6px;">RH</span></h2>
-          <p>Consolidado automático de todas as áreas de despesa. Não é preenchido diretamente — some o que for lançado nas outras 3 abas.</p>
+          <p>Consolidado automático de todas as contas. Não é preenchido diretamente — some o que for lançado nas abas de preenchimento ao lado.</p>
         </div>
         <div class="actions">
           <button class="btn" id="btnExpand">▸ Expandir por mês</button>
           <button class="btn amber" id="btnExportAll">⬇ Exportar todas as abas (.xlsx)</button>
+          <label class="btn" style="margin-left:4px;">⬆ Importar planilha preenchida
+            <input type="file" id="importFilled" accept=".xlsx" style="display:none;">
+          </label>
         </div>
       </div>
 
@@ -258,44 +278,8 @@
       <div class="table-wrap"><table id="tbl-resumo"></table></div>
     </div>
 
-    <!-- DEMAIS DESPESAS DIRETAS -->
-    <div class="panel" id="panel-demais">
-      <div class="section-head">
-        <div><h2>Demais Despesas Diretas</h2><p>2026: realizado de janeiro a julho e orçado de agosto a dezembro. 2027: preencha somente as colunas em amarelo — os totais são automáticos.</p></div>
-      </div>
-      <div class="legend">
-        <span><span class="swatch" style="background:var(--locked-bg)"></span>2026 realizado (jan–jul)</span>
-        <span><span class="swatch" style="background:var(--white-cell)"></span>2026 orçado (ago–dez)</span>
-        <span><span class="swatch" style="background:var(--edit-bg)"></span>2027 (editável)</span>
-      </div>
-      <div class="table-wrap"><table id="tbl-demais"></table></div>
-    </div>
-
-    <!-- SERVIÇOS DE RH -->
-    <div class="panel" id="panel-rh">
-      <div class="section-head">
-        <div><h2>Serviços de RH</h2><p>2026: realizado de janeiro a julho e orçado de agosto a dezembro. 2027: preencha somente as colunas em amarelo — os totais são automáticos.</p></div>
-      </div>
-      <div class="legend">
-        <span><span class="swatch" style="background:var(--locked-bg)"></span>2026 realizado (jan–jul)</span>
-        <span><span class="swatch" style="background:var(--white-cell)"></span>2026 orçado (ago–dez)</span>
-        <span><span class="swatch" style="background:var(--edit-bg)"></span>2027 (editável)</span>
-      </div>
-      <div class="table-wrap"><table id="tbl-rh"></table></div>
-    </div>
-
-    <!-- SERVIÇOS CONTRATADOS -->
-    <div class="panel" id="panel-sc">
-      <div class="section-head">
-        <div><h2>Serviços Contratados</h2><p>2026: realizado de janeiro a julho e orçado de agosto a dezembro. 2027: preencha somente as colunas em amarelo — os totais são automáticos.</p></div>
-      </div>
-      <div class="legend">
-        <span><span class="swatch" style="background:var(--locked-bg)"></span>2026 realizado (jan–jul)</span>
-        <span><span class="swatch" style="background:var(--white-cell)"></span>2026 orçado (ago–dez)</span>
-        <span><span class="swatch" style="background:var(--edit-bg)"></span>2027 (editável)</span>
-      </div>
-      <div class="table-wrap"><table id="tbl-sc"></table></div>
-    </div>
+    <!-- ABAS DE PREENCHIMENTO (geradas dinamicamente conforme a área) -->
+    <div id="dynamicPanelsSlot"></div>
 
     <!-- CONFIGURAÇÕES -->
     <div class="panel" id="panel-config">
@@ -392,79 +376,78 @@ const SUPABASE_ANON_KEY = 'sb_publishable_dirM4K9XY9J8x-XYJmv7zQ_BXacoOL9';
     // sozinho no "modo somente visualização" (banner amarelo), sem travar nada.
     return;
   }
-  const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  window.storage = {
-    async get(key, shared){
-      const { data, error } = await client.from('storage_kv').select('value').eq('key', key).maybeSingle();
-      if(error) throw error;
-      if(!data) throw new Error('key not found'); // mesma regra do storage original: chave inexistente = erro
-      return { key, value: JSON.stringify(data.value), shared };
-    },
-    async set(key, value, shared){
-      const { error } = await client.from('storage_kv').upsert({ key, value: JSON.parse(value) });
-      if(error) throw error;
-      return { key, value, shared };
-    },
-  };
+  // IMPORTANTE: se a biblioteca do Supabase não carregar (bloqueio de rede, firewall,
+  // antivírus, extensão do navegador) isso NÃO pode travar o resto do site — sem este
+  // try/catch, um erro aqui interrompia a execução de todo o script (botões, tabelas,
+  // tudo parava de funcionar silenciosamente).
+  try{
+    if(typeof window.supabase === 'undefined' || !window.supabase) throw new Error('biblioteca do Supabase não carregou');
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    window.storage = {
+      async get(key, shared){
+        const { data, error } = await client.from('storage_kv').select('value').eq('key', key).maybeSingle();
+        if(error) throw error;
+        if(!data) throw new Error('key not found'); // mesma regra do storage original: chave inexistente = erro
+        return { key, value: JSON.stringify(data.value), shared };
+      },
+      async set(key, value, shared){
+        const { error } = await client.from('storage_kv').upsert({ key, value: JSON.parse(value) });
+        if(error) throw error;
+        return { key, value, shared };
+      },
+    };
+  }catch(e){
+    console.error('Não foi possível conectar ao Supabase (o site vai continuar funcionando, mas sem salvar):', e);
+    // window.storage fica undefined de propósito — o app detecta isso no início do init()
+    // e mostra o aviso de "modo somente visualização", sem travar o resto da página.
+  }
 })();
 
 const LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAAGMAAABmCAMAAADoKN8UAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAADnUExURQAAAP+2APezB/i0CPWzBf+7AP//APSwBP+qAPmyBv+zAPeyB/izBfmyBvi2B/iyBf+4APezB/ezB/a0BOqqAPezB/mxBvq2B/ayB/ezB//GAPe0B/izB/izBvqzB/+/APezB/izAPm0BvezBvazB/ezB/mzBvWxCPevBPKuAPizB/izBcyZAPiyBvawAPOwBvezB/e0B/azBv+2APazA/eqAPe0BvizB/ezBfe0B/W0Bf+xAPi0B/CxBfezB/OyBvm0B/mxBva0B/izB/izB/ezBvO0APi0BvewBPe0B/ezBvezBv+zAFLRU3UAAABNdFJOUwAH9v8yDwFHA08b9JOjI2ov+9KwDP55j7DqCdri22sI8yXhh2zDgGJAE8C9BbcdV/H13RVRIXpGlvpqLuQ0/SvXdrDwioIpqj387HwUlq1l/QAAAAlwSFlzAAAh1QAAIdUBBJy0nQAAAttJREFUaEPt2NmSFFUUBdBqWwVnwHkeUEEccR5BcET4/+9R8qzMzqx7M/Pc6qqOMKLXE73P3jcfiCCAzblzc44eOR57VLw/Ht7ymOseeLFK5ZQ8NkvtFDy0SHVHHlmlvoPHvZBwwaSVeZJRG9s0sxaWDQzz7JqYZlk1umidYtPMPMOi8IT75klBwX2d/tRTjoOnHaYc1zyjPvas25TjhNMK5ZHnXEoKI5dcFumOOFRd1jnhsOSK6uB5hxlHaiccFigOXpDPUxyI572o2BMvUh2IZ6n1pCuUe0fiGVq9l8Rr1HvSGUo96aqX9ZHWvaKENMGgJ61SQZhigrBKBWHKqzbhNWnF6ypBmGSEsEIBYdL0b8PCCoUgSzMLsgqFIEszC28IC28qBGHaW3ZBWHAObwvzDIOs4BxkDQyDrOAcZA0Mg6zgHGQN3rHsyArOQdbgXcuOrODceU/WwrRzVbbNufO+rIVp5wPZNufOWXzjQ1kL007mGzv8nk/212TbnIOswXXLjqzgHGQNJn+6ywrOQdbAMMgKzkHWwDDICs7hI2GeYZAVbrgHYdrHdkFYcg+yNLNwQ1hSCJ8Is8yCrEIBYZIRwopPNYIwyQhhjQbCFBOEVSp8Js0wQVj1uQ7SBIOetE6nJ131hT7SGTe1+FK84iv1nniOVu9r8TLlnnTW9r/pv5EvUR2I5+kNvpXPUxyIF3ynecJhxvdaJxyWaI44VKmMOCzTHfnBpfCjwojLip+0x352m/jFceyy2xr1LY6DW/Ipx3X6hZu3FX4VFNwzLJqZ59g0Ms6yamKaZ9fAsIVlmlmbO8Y5Rs3MMyx2cNcLa27p78Yjy35T3pl3FvyueRp/eGvGn2qn9Zf3KjT24+/y/+//47hf3ka4Zx4Psn3zeke0d55/SLJ/3j8+vic4AF84/sfPh+AT9/14EPGJB346jO4Tfn0oZ/CJh9/wq8M5g09szuAT5/7vNpt/ASDjLKou0gXgAAAAAElFTkSuQmCC";
 document.querySelectorAll('.logo, #sidebarLogo').forEach(el => el.src = 'data:image/png;base64,'+LOGO_B64);
 
-const SEED_DATA = {"demais": [{"conta": 413114, "nome_conta": "Despesas de Logística", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413343, "nome_conta": "Rebate", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413201, "nome_conta": "Correios e Malotes", "fornecedor": "Diversos", "meses_2026": [-5570.73, -3367.96, -2321.42, -3045.2, -4103.31, -6644.27, -3654.44, -3900, -3900, -3900, -3900, -3900]}, {"conta": 413538, "nome_conta": "Locação De Veículos", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413503, "nome_conta": "Bens De Pequeno Valor", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, -76, 0, -436.68, 0, 0, 0, 0, 0]}, {"conta": 413506, "nome_conta": "Bens Móveis", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413522, "nome_conta": "Despesas De Mobilidade", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, -1000, -1000, -1000, -1000, -1000]}, {"conta": 413512, "nome_conta": "Impressos E Encadernações", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, -70, 0, -500, -500, -500, -500, -500]}, {"conta": 413513, "nome_conta": "Lanches E Refeições", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, -200, -200, -200, -200, -200]}, {"conta": 413515, "nome_conta": "Locação De Bens E Equipamentos", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413518, "nome_conta": "Material De Consumo", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413519, "nome_conta": "Material De Escritório", "fornecedor": "Diversos", "meses_2026": [0, -2054, -134.92000000000002, 0, -56.43, 0, 0, -1100, -1100, -1100, -1100, -1100]}, {"conta": 413517, "nome_conta": "Material De Informática", "fornecedor": "Diversos", "meses_2026": [-1265.19, 0, -1436, 0, -41.9, 0, -2490, -250, -250, -250, -250, -250]}, {"conta": 413530, "nome_conta": "Outras Despesas", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413308, "nome_conta": "Segurança", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413520, "nome_conta": "Seguros Gerais E De Transp.", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 411201, "nome_conta": "Fretes E Carretos", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, -650, -650, -650, -650, -650]}, {"conta": 413524, "nome_conta": "Viagens E Hospedagem", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, 0, 0, 0, 0, -500, -500, -500, -500, -500]}, {"conta": 413105, "nome_conta": "Manutenção e Conservação", "fornecedor": "Diversos", "meses_2026": [0, 0, 0, -358.99, 0, 0, 0, 0, 0, 0, 0, 0]}], "rh": [{"conta": 413338, "nome_conta": "Serviços de RH", "fornecedor": "Peex (your Life)", "meses_2026": [-6760, -6760, -6760, -6760, -6760, -6760, -6760, -8253, -8253, -8253, -8253, -8253]}, {"conta": 413338, "nome_conta": "Serviços de RH", "fornecedor": "LG", "meses_2026": [-25760.7, -25040.7, -25040.7, -25040.7, -27240.7, -24318.15, -25327.35, -25725, -25725, -25725, -25725, -25725]}, {"conta": 413338, "nome_conta": "Serviços de RH", "fornecedor": "PandaPé (Infojobs)", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413338, "nome_conta": "Serviços de RH", "fornecedor": "Recrutaí", "meses_2026": [-7000, -7000, -7000, -7000, -7000, -7000, -7000, -7350, -7350, -7350, -7350, -7350]}, {"conta": 413338, "nome_conta": "Serviços de RH", "fornecedor": "Recrutaí (Setup)", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}], "sc": [{"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Ispring - Prime Set", "meses_2026": [0, 0, -1780, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Adobe (Comunicação e DHO)", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Videoscribe", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Leo Learnig / Revvo", "meses_2026": [-8166.31, -8166.31, -8166.31, -8166.31, -8166.31, -8166.31, -8166.31, -8574.6255, -8574.6255, -8574.6255, -8574.6255, -8574.6255]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Peex (your Life)", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Avalio", "meses_2026": [-1100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Bitrix", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Etalent", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "CPI", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "IdeaComm", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Screencorp", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Clicksing", "meses_2026": [-586.84, -325.59, -124.95, -124.95, 0, -451.69, -347.94, -720, -720, -720, -720, -720]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Vantix", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Chatbot (Gigi) - Elife", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Vixting", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Farisco", "meses_2026": [-7040, 0, -7040, 0, 0, 0, 0, -3520, -3520, -3520, -3520, -3520]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Conceito Zen", "meses_2026": [-990, -990, -990, -990, -990, -990, -990, -990, -990, -990, -990, -990]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Imperio Jp Alimentacao Lt", "meses_2026": [-660, -660, -660, -660, -660, -660, -660, -660, -660, -660, -660, -660]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Imperio Jp Alimentacao Lt (cashback)", "meses_2026": [8690, 1650, 8690, 1650, 1650, 1650, 1650, 5170, 5170, 5170, 5170, 5170]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Design (Mauricio Lazeree)", "meses_2026": [-3380, -3380, -3380, -3380, -3380, -3380, -3380, -3549, -3549, -3549, -3549, -3549]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Liberado", "meses_2026": [-1500, -1500, -1500, -1500, -1500, -1500, -1500, -1500, -1500, -1500, -1500, -1500]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Dr. Ocupacional", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "Canva (Comunicação)", "meses_2026": [-500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "RH", "meses_2026": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}]};
+const RH_REAL_DATA = {"demais": [{"conta": 411204, "nome_conta": "Fretes e Carretos", "fornecedor": "Consolidado", "meses_2026": [-875.88, 0.0, 0.0, -687.0999999999999, -561.5, -96.13, -615.24, -650.0, -650.0, -650.0, -650.0, -650.0]}, {"conta": 411107, "nome_conta": "Propaganda e Publicidade", "fornecedor": "Consolidado", "meses_2026": [-3380.0, -3980.0, -3380.0, -3380.0, -3380.0, 0.0, -3380.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 412403, "nome_conta": "Promoções Motivacionais", "fornecedor": "Consolidado", "meses_2026": [89.9, 0.0, 0.0, 0.0, 0.0, 575.1, -575.1, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413511, "nome_conta": "Outras Despesas", "fornecedor": "Consolidado", "meses_2026": [-659.74, -8924.0, 0.0, -2584.0, 0.0, -395.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413201, "nome_conta": "Correios e Malotes", "fornecedor": "Consolidado", "meses_2026": [-5570.73, -3367.96, -2321.42, -3045.2, -4103.31, -6644.27, -3654.44, -3900.0, -3900.0, -3900.0, -3900.0, -3900.0]}, {"conta": 413517, "nome_conta": "Material de Informática", "fornecedor": "Consolidado", "meses_2026": [-1265.19, 0.0, -1436.0, 0.0, -41.9, 0.0, -2490.0, -250.0, -250.0, -250.0, -250.0, -250.0]}, {"conta": 413503, "nome_conta": "Bens de Pequeno Valor", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, -76.0, 0.0, -436.68, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413512, "nome_conta": "Impressos e Encadernações", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, -70.0, 0.0, -500.0, -500.0, -500.0, -500.0, -500.0]}, {"conta": 413519, "nome_conta": "Material de Escritório", "fornecedor": "Consolidado", "meses_2026": [0.0, -2054.0, -134.92000000000002, 0.0, -56.43, 0.0, 0.0, -1100.0, -1100.0, -1100.0, -1100.0, -1100.0]}, {"conta": 413505, "nome_conta": "Despesas de Mobilidade", "fornecedor": "Consolidado", "meses_2026": [-1007.31, 0.0, -518.59, -569.6, -501.63, -53.69, -271.73, -1000.0, -1000.0, -1000.0, -1000.0, -1000.0]}, {"conta": 413595, "nome_conta": "Mat. E Serv. De Limpeza", "fornecedor": "Consolidado", "meses_2026": [-781.57, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 412431, "nome_conta": "Treinamentos", "fornecedor": "Consolidado", "meses_2026": [-50000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413308, "nome_conta": "Segurança", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413515, "nome_conta": "Locação de Bens e Equipamentos", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413518, "nome_conta": "Material de Consumo", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413538, "nome_conta": "Locação de Veículos", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413520, "nome_conta": "Seguros Gerais e de Transp.", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413506, "nome_conta": "Bens Móveis", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413524, "nome_conta": "Viagens e Hospedagem", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -500.0, -500.0, -500.0, -500.0, -500.0]}, {"conta": 413513, "nome_conta": "Lanches e Refeições", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -200.0, -200.0, -200.0, -200.0, -200.0]}, {"conta": null, "nome_conta": "Uniformes", "fornecedor": "Consolidado", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}], "servicos_contratados": [{"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "VEXPENSES S.A.", "meses_2026": [-17.08, -17.08, -17.08, -17.08, -17.08, -17.08, -17.08, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "ACAO COMUNITARIA DO BRASI", "meses_2026": [-4632.6, -686.75, -3949.74, -311.66, -438.64, -219.42999999999984, -1981.45, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "LIBERADO APP INTELIGENCIA", "meses_2026": [0.0, 0.0, 0.0, 0.0, -94.39, -151.38, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "METROFILE BRASIL GESTAO D", "meses_2026": [-4078.12, -4078.12, 0.0, -4078.12, -5162.7, -1084.58, -5162.87, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "REDE CIDADA", "meses_2026": [-170.0, -1501.67, -623.3399999999999, -1122.0, -1150.33, -889.11, -827.33, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "MAURICIO LAZZERI ANTUNES ", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "CENTRO DE INTEGRACAO EMPR", "meses_2026": [-1164.0, -338.0, -338.0, -338.0, -338.0, -338.0, -338.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "YOUR LIFE DO BRASIL CONSU", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "GUARDA MIRIM DE SOROCABA", "meses_2026": [-170.0, -510.0, -170.0, -170.0, -170.0, -170.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "ROSIMEIRE NOMOTO CARNEIRO", "meses_2026": [0.0, 0.0, 0.0, 0.0, -750.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "SIZETE JODAS DE OLIVEIRA ", "meses_2026": [0.0, 0.0, 0.0, 0.0, -930.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "ASSOCIACAO PROFISSIONALIZ", "meses_2026": [-980.38, -486.3, -1489.56, -486.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "ISPRING", "meses_2026": [0.0, 0.0, -1780.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "VIXTING TECNOLOGIA E SERV", "meses_2026": [-598.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "FARISCO SERVICOS ADMINIST", "meses_2026": [-3520.0, 0.0, 3520.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "SERASA S.A", "meses_2026": [-7.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "FORNECEDORES DIVERSOS", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -14343.6255, -14343.6255, -14343.6255, -14343.6255, -14343.6255]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "CATHO ONLINE LTDA", "meses_2026": [0.0, 0.0, 0.0, -1300.0, 0.0, 0.0, -1300.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413307, "nome_conta": "Serviços Contratados", "fornecedor": "FLASH TECNOLOGIA E PAGAME", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}], "servicos_contratados_ti": [{"conta": 413339, "nome_conta": "Serviços Contratados - TI", "fornecedor": "TELEFONICA BRASIL S.A.", "meses_2026": [-5140.5, -5140.5, -4826.5, -4937.219999999999, 4472.46, -3645.75, -3740.86, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413339, "nome_conta": "Serviços Contratados - TI", "fornecedor": "ABM SOLUCOES", "meses_2026": [-4237.5, -4237.5, -4238.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413339, "nome_conta": "Serviços Contratados - TI", "fornecedor": "VANTIX TEC COM E SERVICOS", "meses_2026": [-747.9, -747.9, -747.9, 0.0, -1495.8, -747.9, -747.9, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413339, "nome_conta": "Serviços Contratados - TI", "fornecedor": "TELEFONICA CLOUD E TECNOL", "meses_2026": [-375.83, -375.83, -375.83, -375.83, -11793.1, -375.83, -224.79, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "LEO CREATE TECNOLOGIA E S", "meses_2026": [-8166.31, -8166.31, -8166.31, -8166.31, -8166.31, -8166.31, -8166.31, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "SPEED COMERCIO E DESENVOL", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, -993.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "LIBERADO APP INTELIGENCIA", "meses_2026": [-795.68, 0.0, -978.52, -1182.37, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "CLICKSIGN GESTAO DE DOCUM", "meses_2026": [-586.84, -325.59, -124.95, -124.95, 0.0, -451.69, -347.94, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "ALERT INFORMATICA LTDA ME", "meses_2026": [-487.1, -487.1, -487.1, -487.1, -487.1, -487.1, -487.1, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "WDC NETWORKS", "meses_2026": [-96.62, -96.62, -96.62, -96.62, -96.62, -96.62, -96.62, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "INGRAM MICRO BRASIL LTDA", "meses_2026": [0.0, 0.0, 0.0, 0.0, -325.63, -298.59, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "E.LIFE MONITOR ESTUDOS DE", "meses_2026": [-1826.84, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "FORNECEDORES DIVERSOS", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -7010.0, -7010.0, -7075.0, -7011.0, -7032.0]}, {"conta": 413337, "nome_conta": "Serviços Contratados - TI", "fornecedor": "CATHO ONLINE LTDA", "meses_2026": [0.0, 0.0, 0.0, 0.0, -1300.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}], "servicos_contratados_rh": [{"conta": 413341, "nome_conta": "Serviços Contratados - RH", "fornecedor": "RECRUTAI PROGRAMAS DE COM", "meses_2026": [-7000.0, -7000.0, -7000.0, -7000.0, -7000.0, -7000.0, -7000.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413341, "nome_conta": "Serviços Contratados - RH", "fornecedor": "YOUR LIFE DO BRASIL CONSU", "meses_2026": [-6760.0, -6760.0, -6760.0, -6760.0, -6760.0, -6760.0, -6760.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413341, "nome_conta": "Serviços Contratados - RH", "fornecedor": "LG INFORMATICA S/A", "meses_2026": [-25760.7, -25040.7, -25040.7, -25040.7, -27240.7, -24318.15, -25327.35, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413338, "nome_conta": "Serviços Contratados - RH", "fornecedor": "FORNECEDORES DIVERSOS", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -41328.0, -41328.0, -41328.0, -41328.0, -41328.0]}], "despesas_area": [{"conta": 413105, "nome_conta": "Manutenção e Conservação", "fornecedor": "DISTRIBUIDORA RAMO DE OLI", "meses_2026": [0.0, 0.0, 0.0, -358.99, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413114, "nome_conta": "Despesas de Logística", "fornecedor": "FORNECEDORES DIVERSOS", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413105, "nome_conta": "Manutenção e Conservação", "fornecedor": "FORNECEDORES DIVERSOS", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}], "despesas_comunicacao": [{"conta": 413202, "nome_conta": "Voz", "fornecedor": "TELEFONICA BRASIL S.A.", "meses_2026": [-1134.0, -1091.8899999999999, -1061.08, -1036.0, -1850.94, -130.94000000000005, -946.62, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413205, "nome_conta": "Dados", "fornecedor": "TELEFONICA BRASIL S.A.", "meses_2026": [-785.5400000000001, -773.7600000000001, -773.4200000000001, -773.4200000000001, -15.66, -1665.6, -831.54, 0.0, 0.0, 0.0, 0.0, 0.0]}, {"conta": 413202, "nome_conta": "Voz", "fornecedor": "FORNECEDORES DIVERSOS", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -927.72702, -927.72702, -927.72702, -927.72702, -927.72702]}, {"conta": 413205, "nome_conta": "Dados", "fornecedor": "FORNECEDORES DIVERSOS", "meses_2026": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -849.720657868343, -849.720657868343, -849.720657868343, -849.720657868343, -849.720657868343]}]};
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const RESPONSAVEL_PADRAO = 'Pietro';
 
 // ---------------------------------------------------------------------------
 // Modelo de dados
+// Cada área tem uma lista de "sheets" (abas de preenchimento), cada uma com suas linhas.
+// Isso permite que cada área/departamento tenha um número diferente de abas, com nomes
+// diferentes, dependendo de como a base de lançamentos dela foi organizada.
 // ---------------------------------------------------------------------------
 function isCashback(row){
   const txt = ((row.fornecedor||'') + ' ' + (row.nome_conta||'')).toLowerCase();
   return txt.includes('cashback');
 }
 
-function seedRows(list){
-  // Mantém o sinal original do sistema contábil: negativo = despesa. Linhas de "cashback" (crédito) ficam positivas.
+function seedSheetRows(list){
   return list.map(r => ({
     conta:r.conta, nome_conta:r.nome_conta, fornecedor:r.fornecedor,
-    meses_2026:r.meses_2026.map(v=>Number(v)||0), meses_2027:new Array(12).fill(null), isNew:false
+    meses_2026:r.meses_2026.map(v=>Number(v)||0), meses_2027:new Array(12).fill(null), isNew:false, isRateio:false
   }));
 }
 
+// Monta as abas da área RH a partir dos dados reais extraídos da base de lançamentos
+// (planilha "base_teste_1.xlsx", filtrada pelo centro de custo 9917).
+function buildRhSheets(){
+  return [
+    {key:'demais', nome:'Demais Despesas Diretas', allowAdd:false, rows:seedSheetRows(RH_REAL_DATA.demais)},
+    {key:'servicos_contratados', nome:'Serviços Contratados', allowAdd:true, rows:seedSheetRows(RH_REAL_DATA.servicos_contratados)},
+    {key:'servicos_contratados_ti', nome:'Serviços Contratados - TI', allowAdd:true, rows:seedSheetRows(RH_REAL_DATA.servicos_contratados_ti)},
+    {key:'servicos_contratados_rh', nome:'Serviços Contratados - RH', allowAdd:true, rows:seedSheetRows(RH_REAL_DATA.servicos_contratados_rh)},
+    {key:'despesas_area', nome:'Despesas com Área', allowAdd:true, rows:seedSheetRows(RH_REAL_DATA.despesas_area)},
+    {key:'despesas_comunicacao', nome:'Despesas com Comunicação', allowAdd:true, rows:seedSheetRows(RH_REAL_DATA.despesas_comunicacao)},
+  ];
+}
+
 let AREAS = {
-  rh: { nome:'RH', demais:seedRows(SEED_DATA.demais), rh:seedRows(SEED_DATA.rh), sc:seedRows(SEED_DATA.sc), submission:null, resumoFixed:true }
+  rh: { nome:'RH', sheets: buildRhSheets(), submission:null }
 };
 let CONFIG = { adminPasscode:'', areas:[{id:'rh', nome:'RH', passcode:''}] };
 let currentArea = 'rh';
 let visitorName = ''; // nome informado na tela de entrada, usado para pré-preencher "Responsável" e a entrega
 let resumoExpanded = false;
-
-const RESUMO_FIXED = [
-  {nome:'Despesas de Logística', src:'demais', codigo:413114},
-  {nome:'Serviços de RH', src:'rh_all', codigo:413338},
-  {nome:'Rebate', src:'demais', codigo:413343},
-  {nome:'Correios e Malotes', src:'demais', codigo:413201},
-  {nome:'Locação De Veículos', src:'demais', codigo:413538},
-  {nome:'Bens De Pequeno Valor', src:'demais', codigo:413503},
-  {nome:'Bens Móveis', src:'demais', codigo:413506},
-  {nome:'Despesas De Mobilidade', src:'demais', codigo:413522},
-  {nome:'Impressos E Encadernações', src:'demais', codigo:413512},
-  {nome:'Lanches E Refeições', src:'demais', codigo:413513},
-  {nome:'Locação De Bens E Equipamentos', src:'demais', codigo:413515},
-  {nome:'Material De Consumo', src:'demais', codigo:413518},
-  {nome:'Material De Escritório', src:'demais', codigo:413519},
-  {nome:'Material De Informática', src:'demais', codigo:413517},
-  {nome:'Outras Despesas', src:'demais', codigo:413530},
-  {nome:'Segurança', src:'demais', codigo:413308},
-  {nome:'Seguros Gerais E De Transp.', src:'demais', codigo:413520},
-  {nome:'Fretes E Carretos', src:'demais', codigo:411201},
-  {nome:'Viagens E Hospedagem', src:'demais', codigo:413524},
-  {nome:'Serviços Contratados', src:'sc_all', codigo:413307},
-  {nome:'Manutenção e Conservação', src:'demais', codigo:413105},
-  {nome:'Dados - RATEIO', src:'fixed0', codigo:413205},
-  {nome:'Voz - RATEIO', src:'fixed0', codigo:413202},
-  {nome:'Serviços Contratados - TI - RATEIO', src:'fixed0', codigo:413337},
-];
 
 function fmt(v){ if(v===null||v===undefined||isNaN(v)) v=0; return v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtR(v){ return 'R$ ' + fmt(v); }
@@ -526,36 +509,64 @@ function toast(msg){
 // ---------------------------------------------------------------------------
 // Tabelas editáveis
 // ---------------------------------------------------------------------------
-function buildEditableTable(tableId, sheetKey, titulo){
-  const rows = area()[sheetKey];
+function findSheet(sheetKey){ return area().sheets.find(s=>s.key===sheetKey); }
+function tableIdFor(sheetKey){ return 'tbl-'+sheetKey; }
+
+// Decide o que mostrar na coluna da esquerda: só a conta (ex: "Demais Despesas Diretas",
+// onde fornecedor não interessa), só o fornecedor (abas de conta única, ex: "Serviços de RH"),
+// ou os dois (abas com mais de uma conta dentro, ex: "Despesas com Área").
+function labelFor(sheetKey, row){
+  const sheet = findSheet(sheetKey);
+  if(sheetKey === 'demais') return row.nome_conta;
+  const distintas = new Set(sheet.rows.map(r=>r.nome_conta));
+  if(distintas.size <= 1) return row.fornecedor;
+  return `${row.nome_conta} — ${row.fornecedor}`;
+}
+
+function buildEditableTable(sheetKey){
+  const sheet = findSheet(sheetKey);
+  const rows = sheet.rows;
+  const tableId = tableIdFor(sheetKey);
   const table = document.getElementById(tableId);
+  if(!table) return;
+  const labelHeader = sheetKey === 'demais' ? 'Conta' : (new Set(rows.map(r=>r.nome_conta)).size<=1 ? 'Fornecedor' : 'Conta / Fornecedor');
   let html = '<thead>';
-  html += `<tr><th class="label head-dark" rowspan="2">Conta / Fornecedor</th>
+  html += `<tr><th class="label head-dark" rowspan="3">${labelHeader}</th>
             <th colspan="12" class="head-2026 year-label">2026</th>
-            <th rowspan="2" class="head-2026">Total 2026</th>
+            <th rowspan="3" class="head-2026">Total 2026</th>
             <th colspan="12" class="head-2027 year-label">2027</th>
-            <th rowspan="2" class="head-2027">Total 2027</th></tr>`;
+            <th rowspan="3" class="head-2027">Total 2027</th></tr>`;
   html += '<tr>';
   MESES.forEach(m => html += `<th class="head-2026">${m}</th>`);
   MESES.forEach(m => html += `<th class="head-2027">${m}</th>`);
+  html += '</tr><tr>';
+  MESES.forEach((m,i) => html += `<th class="src-label ${is2026Locked(i)?'src-realizado':'src-orcado'}">${is2026Locked(i)?'Realizado':'Orçado'}</th>`);
+  MESES.forEach(() => html += `<th class="src-label src-orcado27">Orçado</th>`);
   html += '</tr></thead><tbody>';
 
   rows.forEach((row, idx) => {
-    html += `<tr data-row="${idx}" class="${row.isNew?'new-row':''}">`;
-    html += `<td class="label"><span>${row.nome_conta}</span><span class="fornecedor">${row.fornecedor}${row.isNew?'<span class="new-tag">NOVO</span>':''}</span></td>`;
+    html += `<tr data-row="${idx}" data-is-rateio="${row.isRateio?'1':'0'}" class="${row.isNew?'new-row':''}">`;
+    html += `<td class="label"><span>${labelFor(sheetKey,row)}</span>${row.isNew?'<span class="new-tag">NOVO</span>':''}
+      ${sheetKey==='demais' ? '' : `<label class="rateio-flag" title="Rateio: entra no Resumo normalmente, mas NÃO sobe para a CQ3 (contabilização feita por outra via).">
+        <input type="checkbox" data-sheet="${sheetKey}" data-rateio-row="${idx}" ${row.isRateio?'checked':''}> É rateio?
+      </label>`}
+    </td>`;
     row.meses_2026.forEach((v,m) => {
       const cls = is2026Locked(m) ? 'locked' : 'orcado2026';
       html += `<td class="${cls} num">${fmt(v)}</td>`;
     });
     html += `<td class="total2026col num">${fmt(sum12(row.meses_2026))}</td>`;
     for(let m=0;m<12;m++){
-      html += `<td class="editcell"><input type="number" step="0.01" data-sheet="${sheetKey}" data-row="${idx}" data-month="${m}" value="${row.meses_2027[m] ?? ''}" placeholder="0,00"></td>`;
+      html += `<td class="editcell"><div class="editcell-inner">
+        <input type="number" step="0.01" data-sheet="${sheetKey}" data-row="${idx}" data-month="${m}" value="${row.meses_2027[m] ?? ''}" placeholder="0,00">
+        <button type="button" class="replicate-btn" data-sheet="${sheetKey}" data-row="${idx}" data-month="${m}" title="Replicar este valor para os próximos meses" style="display:${(row.meses_2027[m]!==null && row.meses_2027[m]!==undefined && m<11)?'inline-flex':'none'};">↦</button>
+      </div></td>`;
     }
     html += `<td class="total2027 num" data-total-row="${idx}">${fmt(0)}</td>`;
     html += '</tr>';
   });
 
-  html += '<tr class="grandtotal"><td class="label">TOTAL — '+titulo+'</td>';
+  html += '<tr class="grandtotal"><td class="label">TOTAL — '+sheet.nome+'</td>';
   for(let m=0;m<12;m++) html += `<td class="num">${fmt(0)}</td>`;
   html += `<td class="num">${fmt(0)}</td>`;
   for(let m=0;m<12;m++) html += `<td class="num" data-grand2027-month="${m}">${fmt(0)}</td>`;
@@ -575,24 +586,27 @@ function buildEditableTable(tableId, sheetKey, titulo){
   const wrap = table.closest('.table-wrap');
   let addRow = wrap.parentElement.querySelector('.add-row[data-for="'+sheetKey+'"]');
   if(addRow) addRow.remove();
+
+  if(!sheet.allowAdd){ return; }
+
+  const contas = [...new Set(rows.map(r=>r.nome_conta))];
   addRow = document.createElement('div');
   addRow.className = 'add-row';
   addRow.dataset.for = sheetKey;
 
-  if(sheetKey === 'demais'){
-    const contas = [...new Set(rows.map(r=>r.nome_conta))];
+  if(contas.length <= 1){
+    const nomeConta = rows[0] ? rows[0].nome_conta : sheet.nome;
+    addRow.innerHTML = `
+      <span>Conta: <strong>${nomeConta}</strong></span>
+      <input id="newFornecedor-${sheetKey}" placeholder="Nome do fornecedor">
+      <button class="btn amber" id="btnAdd-${sheetKey}">+ Adicionar fornecedor</button>`;
+  } else {
     addRow.innerHTML = `
       <select id="newContaSelect-${sheetKey}">
         ${contas.map(c=>`<option value="${c}">${c}</option>`).join('')}
         <option value="__nova__">+ nova conta...</option>
       </select>
       <input id="newContaLivre-${sheetKey}" placeholder="Nome da nova conta" style="display:none;">
-      <input id="newFornecedor-${sheetKey}" placeholder="Nome do fornecedor">
-      <button class="btn amber" id="btnAdd-${sheetKey}">+ Adicionar fornecedor</button>`;
-  } else {
-    const nomeConta = rows[0] ? rows[0].nome_conta : (sheetKey==='rh' ? 'Serviços de RH' : 'Serviços Contratados');
-    addRow.innerHTML = `
-      <span>Conta: <strong>${nomeConta}</strong></span>
       <input id="newFornecedor-${sheetKey}" placeholder="Nome do fornecedor">
       <button class="btn amber" id="btnAdd-${sheetKey}">+ Adicionar fornecedor</button>`;
   }
@@ -608,14 +622,15 @@ function buildEditableTable(tableId, sheetKey, titulo){
 }
 
 function addFornecedor(sheetKey){
-  const rows = area()[sheetKey];
+  const sheet = findSheet(sheetKey);
+  const rows = sheet.rows;
   const fornecedorInput = document.getElementById(`newFornecedor-${sheetKey}`);
   const fornecedor = fornecedorInput.value.trim();
   if(!fornecedor){ toast('Informe o nome do fornecedor.'); return; }
 
+  const sel = document.getElementById(`newContaSelect-${sheetKey}`);
   let nomeConta, contaCodigo;
-  if(sheetKey === 'demais'){
-    const sel = document.getElementById(`newContaSelect-${sheetKey}`);
+  if(sel){
     if(sel.value === '__nova__'){
       nomeConta = document.getElementById(`newContaLivre-${sheetKey}`).value.trim();
       if(!nomeConta){ toast('Informe o nome da nova conta.'); return; }
@@ -626,14 +641,13 @@ function addFornecedor(sheetKey){
       contaCodigo = ref ? ref.conta : null;
     }
   } else {
-    nomeConta = rows[0] ? rows[0].nome_conta : (sheetKey==='rh' ? 'Serviços de RH' : 'Serviços Contratados');
+    nomeConta = rows[0] ? rows[0].nome_conta : sheet.nome;
     contaCodigo = rows[0] ? rows[0].conta : null;
   }
 
-  rows.push({ conta:contaCodigo, nome_conta:nomeConta, fornecedor, meses_2026:new Array(12).fill(0), meses_2027:new Array(12).fill(null), isNew:true });
+  rows.push({ conta:contaCodigo, nome_conta:nomeConta, fornecedor, meses_2026:new Array(12).fill(0), meses_2027:new Array(12).fill(null), isNew:true, isRateio:false });
 
-  buildEditableTable(sheetKey==='demais'?'tbl-demais':(sheetKey==='rh'?'tbl-rh':'tbl-sc'), sheetKey,
-    sheetKey==='demais'?'Demais Despesas Diretas':(sheetKey==='rh'?'Serviços de RH':'Serviços Contratados'));
+  buildEditableTable(sheetKey);
   attachInputHandlers();
   scheduleSave();
   toast('Fornecedor adicionado — total atualizado no Resumo.');
@@ -641,9 +655,8 @@ function addFornecedor(sheetKey){
 }
 
 function recalcSheet(sheetKey){
-  const tableId = sheetKey==='demais'?'tbl-demais':(sheetKey==='rh'?'tbl-rh':'tbl-sc');
-  const table = document.getElementById(tableId);
-  const rows = area()[sheetKey];
+  const table = document.getElementById(tableIdFor(sheetKey));
+  const rows = findSheet(sheetKey).rows;
   const monthTotals2027 = new Array(12).fill(0);
 
   rows.forEach((row, idx) => {
@@ -659,79 +672,137 @@ function recalcSheet(sheetKey){
   renderResumo();
 }
 
+function attachResumoLinks(){
+  document.querySelectorAll('.resumo-link').forEach(a=>{
+    a.onclick = (e)=>{
+      e.preventDefault();
+      const sheetKey = a.dataset.sheetKey;
+      const rowIdx = Number(a.dataset.rowIdx);
+      goToPreenchimento(sheetKey, isNaN(rowIdx) ? null : rowIdx);
+    };
+  });
+}
+
+function goToPreenchimento(sheetKey, rowIdx){
+  switchTab(sheetKey);
+  setTimeout(()=>{
+    const table = document.getElementById(tableIdFor(sheetKey));
+    if(!table) return;
+    let target = table;
+    if(rowIdx !== null && rowIdx !== undefined){
+      const tr = table.querySelector(`tbody tr[data-row="${rowIdx}"]`);
+      if(tr) target = tr;
+    }
+    if(typeof target.scrollIntoView === 'function') target.scrollIntoView({behavior:'smooth', block:'center'});
+    target.classList.add('row-flash');
+    setTimeout(()=> target.classList.remove('row-flash'), 1800);
+    if(rowIdx !== null && rowIdx !== undefined){
+      const inp = table.querySelector(`input[data-sheet="${sheetKey}"][data-row="${rowIdx}"][data-month="0"]`);
+      if(inp) inp.focus();
+    }
+  }, 60);
+}
+
 function attachInputHandlers(){
   document.querySelectorAll('input[type="number"][data-sheet]').forEach(inp => {
     inp.oninput = (e) => {
       const {sheet, row, month} = e.target.dataset;
       const raw = e.target.value === '' ? null : parseFloat(e.target.value.replace(',', '.'));
-      let val = null;
-      if(raw !== null && !isNaN(raw)){
-        const rowObj = area()[sheet][row];
-        val = isCashback(rowObj) ? Math.abs(raw) : -Math.abs(raw);
-      }
-      area()[sheet][row].meses_2027[month] = val;
+      // Sem conversão automática de sinal — o Resumo espelha exatamente o que for digitado aqui.
+      const val = (raw===null || isNaN(raw)) ? null : raw;
+      findSheet(sheet).rows[row].meses_2027[month] = val;
+      const btn = document.querySelector(`.replicate-btn[data-sheet="${sheet}"][data-row="${row}"][data-month="${month}"]`);
+      if(btn) btn.style.display = (val!==null && Number(month)<11) ? 'inline-flex' : 'none';
       recalcSheet(sheet);
       scheduleSave();
     };
   });
-}
-
-// ---------------------------------------------------------------------------
-// Resumo
-// ---------------------------------------------------------------------------
-function baseResumoList(){
-  // RH usa a ordem/mapa oficial da planilha original (24 contas, posições fixas).
-  if(area().resumoFixed) return RESUMO_FIXED;
-  // Áreas novas (importadas): monta a lista na ordem em que as contas aparecem nos dados,
-  // sem depender do mapa fixo do RH — funciona tanto para import "completo" quanto "só Resumo".
-  const list = [];
-  const seen = new Set();
-  area().demais.forEach(r=>{
-    if(!seen.has(r.nome_conta)){ seen.add(r.nome_conta); list.push({nome:r.nome_conta, src:'demais', codigo:r.conta}); }
+  document.querySelectorAll('.replicate-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      const {sheet, row, month} = e.target.dataset;
+      replicateForward(sheet, row, Number(month));
+    };
   });
-  if(area().rh && area().rh.length){ list.push({nome:area().rh[0].nome_conta || 'Serviços de RH', src:'rh_all', codigo:area().rh[0].conta}); }
-  if(area().sc && area().sc.length){ list.push({nome:area().sc[0].nome_conta || 'Serviços Contratados', src:'sc_all', codigo:area().sc[0].conta}); }
-  return list;
+  document.querySelectorAll('input[type="checkbox"][data-rateio-row]').forEach(chk => {
+    chk.onchange = (e) => {
+      const {sheet, rateioRow} = e.target.dataset;
+      const rowObj = findSheet(sheet).rows[rateioRow];
+      rowObj.isRateio = e.target.checked;
+      const tr = e.target.closest('tr');
+      if(tr) tr.dataset.isRateio = rowObj.isRateio ? '1' : '0';
+      renderResumo();
+      scheduleSave();
+      toast(rowObj.isRateio ? 'Marcado como rateio — não vai mais para a CQ3.' : 'Desmarcado — volta a entrar na CQ3 normalmente.');
+    };
+  });
 }
 
-function resumoRowsComputed(){
-  const rows = area().demais;
-  const base = baseResumoList();
-  const seenContas = new Set(base.filter(e=>e.src==='demais').map(e=>e.nome));
-  const dynamicExtra = [...new Set(rows.map(r=>r.nome_conta))].filter(n=>!seenContas.has(n));
-  const list = base.concat(dynamicExtra.map(n=>({nome:n, src:'demais', codigo:null})));
+function replicateForward(sheet, rowIdx, monthIdx){
+  const rowObj = findSheet(sheet).rows[rowIdx];
+  const val = rowObj.meses_2027[monthIdx];
+  if(val === null || val === undefined) return;
+  const restante = rowObj.meses_2027.slice(monthIdx+1);
+  const temOutrosValores = restante.some(v => v!==null && v!==undefined && v!==val);
+  if(temOutrosValores && !confirm('Alguns meses seguintes já têm valores diferentes preenchidos. Substituir todos por '+fmt(val)+'?')) return;
+  for(let m=monthIdx+1; m<12; m++) rowObj.meses_2027[m] = val;
 
-  return list.map(entry => {
-    let m2026=new Array(12).fill(0), m2027=new Array(12).fill(0), codigo=entry.codigo;
-    if(entry.src === 'fixed0'){
-      // zero
-    } else if(entry.src === 'rh_all'){
-      area().rh.forEach(r=>{ r.meses_2026.forEach((v,m)=>m2026[m]+=Number(v)||0); r.meses_2027.forEach((v,m)=>m2027[m]+=Number(v)||0); if(!codigo) codigo=r.conta; });
-    } else if(entry.src === 'sc_all'){
-      area().sc.forEach(r=>{ r.meses_2026.forEach((v,m)=>m2026[m]+=Number(v)||0); r.meses_2027.forEach((v,m)=>m2027[m]+=Number(v)||0); if(!codigo) codigo=r.conta; });
-    } else {
-      rows.filter(r=>r.nome_conta===entry.nome).forEach(r=>{
-        r.meses_2026.forEach((v,m)=>m2026[m]+=Number(v)||0);
-        r.meses_2027.forEach((v,m)=>m2027[m]+=Number(v)||0);
-        if(!codigo) codigo=r.conta;
-      });
-    }
-    return {nome:entry.nome, codigo, m2026, m2027, t2026:sum12(m2026), t2027:sum12(m2027)};
+  buildEditableTable(sheet);
+  attachInputHandlers();
+  toast('Valor replicado para os meses seguintes.');
+  scheduleSave();
+}
+
+// ---------------------------------------------------------------------------
+// Resumo — genérico: agrupa TODAS as linhas de TODAS as abas da área por nome da conta.
+// Cada conta distinta vira uma linha no Resumo, na ordem em que aparece pela primeira vez.
+// ---------------------------------------------------------------------------
+function resumoRowsComputed(){
+  const grupos = new Map(); // nome_conta -> {m2026,m2027,m2027cq3,codigo,sheetKey,rowIdx}
+  const ordem = [];
+
+  area().sheets.forEach(sheet=>{
+    sheet.rows.forEach((row, rowIdx)=>{
+      if(!grupos.has(row.nome_conta)){
+        grupos.set(row.nome_conta, {
+          nome:row.nome_conta, codigo:row.conta, m2026:new Array(12).fill(0), m2027:new Array(12).fill(0), m2027cq3:new Array(12).fill(0),
+          sheetKey:sheet.key, rowIdx: sheet.rows.filter(r=>r.nome_conta===row.nome_conta).length===1 ? rowIdx : null
+        });
+        ordem.push(row.nome_conta);
+      }
+      const g = grupos.get(row.nome_conta);
+      row.meses_2026.forEach((v,m)=>g.m2026[m]+=Number(v)||0);
+      row.meses_2027.forEach((v,m)=>g.m2027[m]+=Number(v)||0);
+      // Linhas marcadas como "rateio" entram no Resumo normalmente, mas ficam de fora da CQ3
+      // (a contabilização delas é feita por outra via).
+      if(!row.isRateio) row.meses_2027.forEach((v,m)=>g.m2027cq3[m]+=Number(v)||0);
+      if(!g.codigo) g.codigo = row.conta;
+    });
+  });
+
+  return ordem.map(nome=>{
+    const g = grupos.get(nome);
+    return {nome:g.nome, codigo:g.codigo, m2026:g.m2026, m2027:g.m2027, m2027cq3:g.m2027cq3,
+             t2026:sum12(g.m2026), t2027:sum12(g.m2027), t2027cq3:sum12(g.m2027cq3), sheetKey:g.sheetKey, rowIdx:g.rowIdx};
   });
 }
 
 function renderResumo(){
   const table = document.getElementById('tbl-resumo');
+
+
   const data = resumoRowsComputed();
   let html = '<thead>';
   if(!resumoExpanded){
     html += `<tr><th class="label head-dark">Conta</th><th class="head-2026 year-label">Total 2026</th><th class="head-2027 year-label">Total 2027</th></tr>`;
   } else {
-    html += `<tr><th class="label head-dark" rowspan="2">Conta</th>
-              <th colspan="12" class="head-2026 year-label">2026</th><th rowspan="2" class="head-2026">Total 2026</th>
-              <th colspan="12" class="head-2027 year-label">2027</th><th rowspan="2" class="head-2027">Total 2027</th></tr><tr>`;
+    html += `<tr><th class="label head-dark" rowspan="3">Conta</th>
+              <th colspan="12" class="head-2026 year-label">2026</th><th rowspan="3" class="head-2026">Total 2026</th>
+              <th colspan="12" class="head-2027 year-label">2027</th><th rowspan="3" class="head-2027">Total 2027</th></tr><tr>`;
     MESES.forEach(m=> html += `<th class="head-2026">${m}</th>`);
     MESES.forEach(m=> html += `<th class="head-2027">${m}</th>`);
+    html += '</tr><tr>';
+    MESES.forEach((m,i)=> html += `<th class="src-label ${is2026Locked(i)?'src-realizado':'src-orcado'}">${is2026Locked(i)?'Realizado':'Orçado'}</th>`);
+    MESES.forEach(()=> html += `<th class="src-label src-orcado27">Orçado</th>`);
     html += '</tr>';
   }
   html += '</thead><tbody>';
@@ -739,13 +810,13 @@ function renderResumo(){
   let grand26=0, grand27=0;
   const grandMonths26=new Array(12).fill(0), grandMonths27=new Array(12).fill(0);
   let novosFornecedores=0;
-  ['demais','rh','sc'].forEach(k=> area()[k].forEach(r=>{ if(r.isNew) novosFornecedores++; }));
+  area().sheets.forEach(sheet=> sheet.rows.forEach(r=>{ if(r.isNew) novosFornecedores++; }));
 
   data.forEach(row=>{
     grand26+=row.t2026; grand27+=row.t2027;
     row.m2026.forEach((v,m)=>grandMonths26[m]+=v);
     row.m2027.forEach((v,m)=>grandMonths27[m]+=v);
-    html += `<tr><td class="label">${row.nome}</td>`;
+    html += `<tr><td class="label"><a href="#" class="resumo-link" data-sheet-key="${row.sheetKey}" data-row-idx="${row.rowIdx===null?'':row.rowIdx}">${row.nome} ↗</a></td>`;
     if(!resumoExpanded){
       html += `<td class="locked num">${fmt(row.t2026)}</td><td class="total2027 num">${fmt(row.t2027)}</td>`;
     } else {
@@ -768,6 +839,7 @@ function renderResumo(){
   }
   html += '</tr></tbody>';
   table.innerHTML = html;
+  attachResumoLinks();
 
   document.getElementById('kpiTotal2026').textContent = fmtR(grand26);
   document.getElementById('kpiTotal2027').textContent = fmtR(grand27);
@@ -967,7 +1039,8 @@ function buildCQ3Sheet(wb, resumoData, responsavelNome){
       ws.getCell(r,9).value = '';
       ws.getCell(r,10).value = '';
       // O sinal já vem correto do preenchimento (negativo=despesa, positivo=cashback), sem transformação aqui.
-      ws.getCell(r,11).value = row.m2027[m] || 0;
+      // Linhas marcadas como "rateio" ficam de fora daqui (m2027cq3 já exclui essas).
+      ws.getCell(r,11).value = row.m2027cq3[m] || 0;
       ws.getCell(r,11).numFmt = '#,##0.00';
       ws.getCell(r,12).value = row.nome;
       ws.getCell(r,13).value = area().nome || currentArea;
@@ -979,13 +1052,23 @@ function buildCQ3Sheet(wb, resumoData, responsavelNome){
   ws.getColumn(12).width = 30;
   ws.views = [{state:'frozen', ySplit:1}];
 
-  // linha de conferência: total de "Movimento" deve bater exatamente com o Total 2027 do Resumo
+  // linha de conferência: total de "Movimento" (sem rateio) x Total 2027 do Resumo (com rateio)
+  const totalCQ3 = resumoData.reduce((a,row)=>a+row.t2027cq3,0);
   const totalResumo = resumoData.reduce((a,row)=>a+row.t2027,0);
-  ws.getCell(r+1,10).value = 'Total Movimento (deve bater com Total 2027 do Resumo):';
+  const totalRateio = totalResumo - totalCQ3;
+  ws.getCell(r+1,10).value = 'Total Movimento nesta CQ3 (sem rateio):';
   ws.getCell(r+1,10).font = {bold:true};
-  ws.getCell(r+1,11).value = totalResumo;
+  ws.getCell(r+1,11).value = totalCQ3;
   ws.getCell(r+1,11).numFmt = '#,##0.00';
   ws.getCell(r+1,11).font = {bold:true};
+  ws.getCell(r+2,10).value = 'Total 2027 do Resumo (com rateio):';
+  ws.getCell(r+2,11).value = totalResumo;
+  ws.getCell(r+2,11).numFmt = '#,##0.00';
+  ws.getCell(r+3,10).value = 'Diferença = valores marcados como rateio (contabilizados por outra via):';
+  ws.getCell(r+3,10).font = {italic:true, color:{argb:'FF595959'}};
+  ws.getCell(r+3,11).value = totalRateio;
+  ws.getCell(r+3,11).numFmt = '#,##0.00';
+  ws.getCell(r+3,11).font = {italic:true, color:{argb:'FF595959'}};
 }
 
 function buildEvidenciaSheet(wb, nomeEntrega){
@@ -1019,9 +1102,9 @@ async function exportAllSheets(nomeEntrega){
   }
   buildEvidenciaSheet(wb, nomeEntrega);
   buildResumoSheet(wb, resumoData);
-  buildEditableSheetExcel(wb, 'Demais Despesas Diretas', area().demais, 'Demais Despesas Diretas');
-  if(area().rh && area().rh.length) buildEditableSheetExcel(wb, 'Serviços de RH', area().rh, 'Serviços de RH');
-  if(area().sc && area().sc.length) buildEditableSheetExcel(wb, 'Serviços Contratados', area().sc, 'Serviços Contratados');
+  area().sheets.forEach(sheet => {
+    if(sheet.rows.length) buildEditableSheetExcel(wb, sheet.nome.slice(0,31), sheet.rows, sheet.nome);
+  });
   buildCQ3Sheet(wb, resumoData, nomeEntrega || (area().submission?area().submission.nome:RESPONSAVEL_PADRAO));
 
   const buf = await wb.xlsx.writeBuffer();
@@ -1036,6 +1119,87 @@ async function exportAllSheets(nomeEntrega){
 document.getElementById('btnExportAll').addEventListener('click', ()=> exportAllSheets(area().submission?area().submission.nome:null));
 
 // ---------------------------------------------------------------------------
+// Importar planilha preenchida de volta — fecha o ciclo "baixar, preencher no
+// Excel, subir de novo". Reconhece o próprio formato gerado por "Exportar todas
+// as abas": casa cada aba do Excel com a aba correspondente da área atual pelo
+// nome, e cada linha por (Conta + Fornecedor), atualizando só os valores de 2027.
+// ---------------------------------------------------------------------------
+function excelSheetNameFor(sheet){ return sheet.nome.slice(0,31); }
+
+function parseFilledSheetForUpdate(ws){
+  const json = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
+  const rows = [];
+  for(let i=4; i<json.length; i++){ // dados começam na linha 5 do Excel (índice 4)
+    const r = json[i];
+    if(!r) continue;
+    const conta = r[0], nomeContaRaw = r[1], fornecedorRaw = r[2];
+    if(nomeContaRaw===null || nomeContaRaw===undefined || String(nomeContaRaw).trim()==='') continue;
+    if(/^total\b/i.test(String(nomeContaRaw).trim())) break; // linha de total = fim dos dados
+    const meses_2027 = [];
+    for(let c=16; c<28; c++){ const v = r[c]; meses_2027.push(typeof v==='number' ? v : null); }
+    rows.push({
+      conta, nome_conta:String(nomeContaRaw).trim(),
+      fornecedor: (fornecedorRaw===null||fornecedorRaw===undefined) ? '' : String(fornecedorRaw).trim(),
+      meses_2027
+    });
+  }
+  return rows;
+}
+
+function normKey(nome, fornecedor){ return (nome||'').trim().toLowerCase()+'||'+(fornecedor||'').trim().toLowerCase(); }
+
+function importFilledWorkbook(wb){
+  let atualizados = 0, novos = 0, abasProcessadas = 0;
+
+  area().sheets.forEach(sheet=>{
+    const ws = wb.Sheets[excelSheetNameFor(sheet)];
+    if(!ws) return;
+    abasProcessadas++;
+    const importado = parseFilledSheetForUpdate(ws);
+    const indicePorChave = new Map(sheet.rows.map((r,idx)=>[normKey(r.nome_conta,r.fornecedor), idx]));
+
+    importado.forEach(imp=>{
+      const chave = normKey(imp.nome_conta, imp.fornecedor);
+      if(indicePorChave.has(chave)){
+        sheet.rows[indicePorChave.get(chave)].meses_2027 = imp.meses_2027;
+        atualizados++;
+      } else {
+        // fornecedor novo, incluído direto na planilha baixada pelo gestor
+        sheet.rows.push({
+          conta: typeof imp.conta==='number' ? imp.conta : null,
+          nome_conta: imp.nome_conta, fornecedor: imp.fornecedor,
+          meses_2026: new Array(12).fill(0), meses_2027: imp.meses_2027, isNew:true, isRateio:false
+        });
+        novos++;
+      }
+    });
+  });
+
+  return {atualizados, novos, abasProcessadas};
+}
+
+document.getElementById('importFilled').addEventListener('change', async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array'});
+    const resultado = importFilledWorkbook(wb);
+    if(resultado.abasProcessadas === 0){
+      toast('Não reconheci nenhuma aba dessa planilha — confirme que é o arquivo exportado por aqui (botão "Exportar todas as abas").');
+    } else {
+      rebuildAll();
+      scheduleSave();
+      toast(`Importado: ${resultado.atualizados} conta(s) atualizada(s), ${resultado.novos} nova(s), em ${resultado.abasProcessadas} aba(s). Confira e clique em "Entregar orçamento" quando estiver certo.`);
+    }
+  }catch(err){
+    console.error(err);
+    toast('Não consegui ler esse arquivo. Confirme que é .xlsx e que foi exportado por aqui.');
+  }
+  e.target.value = '';
+});
+
+
+// ---------------------------------------------------------------------------
 // Importar planilha .xlsx
 // ---------------------------------------------------------------------------
 function parseSheetRows(ws){
@@ -1047,7 +1211,7 @@ function parseSheetRows(ws){
     if(typeof a==='string' && a.trim()==='Conta') return;
     const meses=[];
     for(let c=7;c<19;c++){ const v=r[c]; meses.push(typeof v==='number'?v:0); }
-    rows.push({conta: typeof a==='number'?a:null, nome_conta:b, fornecedor:g, meses_2026:meses, meses_2027:new Array(12).fill(null), isNew:false});
+    rows.push({conta: typeof a==='number'?a:null, nome_conta:b, fornecedor:g, meses_2026:meses, meses_2027:new Array(12).fill(null), isNew:false, isRateio:false});
   });
   return rows;
 }
@@ -1067,7 +1231,7 @@ function parseResumoOnlySheet(ws){
     if(typeof nome !== 'string' || nome.trim()==='' || /^total/i.test(nome.trim())) break;
     const meses=[];
     for(let c=2;c<14;c++){ const v=r[c]; meses.push(typeof v==='number'?v:0); }
-    rows.push({conta: typeof conta==='number'?conta:null, nome_conta:nome, fornecedor:'Consolidado', meses_2026:meses, meses_2027:new Array(12).fill(null), isNew:false});
+    rows.push({conta: typeof conta==='number'?conta:null, nome_conta:nome, fornecedor:'Consolidado', meses_2026:meses, meses_2027:new Array(12).fill(null), isNew:false, isRateio:false});
   }
   return rows;
 }
@@ -1079,14 +1243,14 @@ function buildAreaFromWorkbook(wb, nome){
 
   if(demaisWs || rhWs || scWs){
     // Formato completo (como o RH): 3 abas com detalhe por fornecedor.
-    return {
-      nome, demais: demaisWs?parseSheetRows(demaisWs):[], rh: rhWs?parseSheetRows(rhWs):[], sc: scWs?parseSheetRows(scWs):[],
-      submission:null, resumoFixed:false
-    };
+    const sheets = [{key:'demais', nome:'Demais Despesas Diretas', allowAdd:false, rows: demaisWs?parseSheetRows(demaisWs):[]}];
+    if(rhWs) sheets.push({key:'servicos_rh', nome:'Serviços de RH', allowAdd:true, rows:parseSheetRows(rhWs)});
+    if(scWs) sheets.push({key:'servicos_contratados', nome:'Serviços Contratados', allowAdd:true, rows:parseSheetRows(scWs)});
+    return { nome, sheets, submission:null };
   }
   if(resumoWs){
-    // Formato simplificado: só a aba Resumo, uma linha por conta. Sem Serviços de RH / Contratados.
-    return { nome, demais: parseResumoOnlySheet(resumoWs), rh: [], sc: [], submission:null, resumoFixed:false };
+    // Formato simplificado: só a aba Resumo, uma linha por conta. Uma única aba de preenchimento.
+    return { nome, sheets:[{key:'demais', nome:'Despesas', allowAdd:false, rows:parseResumoOnlySheet(resumoWs)}], submission:null };
   }
   return null; // nenhuma aba reconhecida
 }
@@ -1101,7 +1265,7 @@ document.getElementById('importXlsx').addEventListener('change', async (e)=>{
   if(!built){ toast('Não encontrei a aba "Resumo" nem as 3 abas de detalhe nessa planilha.'); return; }
   AREAS[areaId] = built;
   await window.storage.set(keyForArea(areaId), JSON.stringify(AREAS[areaId]), true);
-  const tipo = (built.rh.length||built.sc.length) ? 'completo (3 abas)' : 'simplificado (só Resumo)';
+  const tipo = built.sheets.length > 1 ? 'completo (' + built.sheets.length + ' abas)' : 'simplificado (só Resumo)';
   toast(`Planilha importada (formato ${tipo}) para a área "${AREAS[areaId].nome}".`);
   if(areaId===currentArea) rebuildAll();
   e.target.value = '';
@@ -1125,7 +1289,7 @@ document.getElementById('importXlsxBulk').addEventListener('change', async (e)=>
       if(!CONFIG.areas.find(a=>a.id===id)) CONFIG.areas.push({id, nome, passcode:''});
       AREAS[id] = built;
       await window.storage.set(keyForArea(id), JSON.stringify(AREAS[id]), true);
-      const tipo = (built.rh.length||built.sc.length) ? 'completo' : 'só Resumo';
+      const tipo = built.sheets.length > 1 ? 'completo' : 'só Resumo';
       results.push(`✅ ${file.name} → área "${nome}" (formato ${tipo}) — link: ${areaLink(id)}`);
     }catch(err){
       results.push(`❌ ${file.name} — erro ao importar (${err.message})`);
@@ -1206,7 +1370,7 @@ document.getElementById('btnAddArea').addEventListener('click', async ()=>{
   if(!nome){ toast('Informe o nome da área.'); return; }
   const id = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
   CONFIG.areas.push({id, nome, passcode:''});
-  AREAS[id] = {nome, demais:[], rh:[], sc:[], submission:null, resumoFixed:false};
+  AREAS[id] = {nome, sheets:[{key:'demais', nome:'Despesas', allowAdd:false, rows:[]}], submission:null};
   await saveConfig();
   await window.storage.set(keyForArea(id), JSON.stringify(AREAS[id]), true);
   nameInput.value=''; renderAreaList(); populateAreaSelectors();
@@ -1250,7 +1414,7 @@ document.getElementById('gateEnter').addEventListener('click', async ()=>{
   if(cfg && cfg.passcode && cfg.passcode !== pass){ document.getElementById('gateErr').textContent='Senha incorreta para esta área.'; return; }
   currentArea = areaId;
   visitorName = nome;
-  if(!AREAS[areaId]){ const ok = await loadArea(areaId); if(!ok) AREAS[areaId] = {nome:cfg?cfg.nome:areaId, demais:[], rh:[], sc:[], submission:null, resumoFixed:false}; }
+  if(!AREAS[areaId]){ const ok = await loadArea(areaId); if(!ok) AREAS[areaId] = {nome:cfg?cfg.nome:areaId, sheets:[{key:'demais', nome:'Despesas', allowAdd:false, rows:[]}], submission:null}; }
   document.getElementById('gate').classList.add('hidden');
   // atualiza a URL para virar o link direto/pessoal dessa área (dá pra favoritar/compartilhar)
   history.replaceState(null, '', areaLink(areaId));
@@ -1263,11 +1427,11 @@ document.getElementById('gateAdminLink').addEventListener('click', ()=>{
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
-const TAB_LABELS = {resumo:'Resumo', demais:'Demais Despesas Diretas', rh:'Serviços de RH', sc:'Serviços Contratados', config:'Configurações'};
 function switchTab(tab){
   document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id==='panel-'+tab));
-  document.getElementById('crumbTab').textContent = TAB_LABELS[tab] || tab;
+  const btn = document.querySelector(`.navbtn[data-tab="${tab}"]`);
+  document.getElementById('crumbTab').textContent = btn ? btn.textContent.trim() : tab;
 }
 document.querySelectorAll('.navbtn').forEach(btn=> btn.addEventListener('click', ()=> switchTab(btn.dataset.tab)));
 
@@ -1280,11 +1444,42 @@ document.getElementById('btnReload').addEventListener('click', async ()=>{
 });
 document.getElementById('btnReset').addEventListener('click', ()=>{
   if(confirm('Tem certeza que deseja limpar TODO o preenchimento de 2027 desta área?')){
-    ['demais','rh','sc'].forEach(k=> area()[k].forEach(r=> r.meses_2027 = new Array(12).fill(null)));
+    area().sheets.forEach(sheet => sheet.rows.forEach(r=> r.meses_2027 = new Array(12).fill(null)));
     area().submission = null;
     rebuildAll(); scheduleSave();
   }
 });
+
+function sheetIntroText(){
+  return '2026: realizado de janeiro a julho e orçado de agosto a dezembro. 2027: preencha somente as colunas em amarelo — use valores negativos para despesas (ex: -1.000,00) e positivos só para créditos/cashback. Clique em ↦ para replicar um valor para os meses seguintes.';
+}
+
+// Constrói o menu lateral e os painéis (uma tabela por aba) de acordo com a área atual.
+// Isso permite que cada área tenha um número diferente de abas.
+function renderNavAndPanels(){
+  const navSlot = document.getElementById('dynamicNavSlot');
+  const panelsSlot = document.getElementById('dynamicPanelsSlot');
+  navSlot.innerHTML = area().sheets.map(sheet =>
+    `<button class="navbtn" data-tab="${sheet.key}"><span class="ic"></span> ${sheet.nome}</button>`
+  ).join('');
+  panelsSlot.innerHTML = area().sheets.map(sheet => `
+    <div class="panel" id="panel-${sheet.key}">
+      <div class="section-head">
+        <div><h2>${sheet.nome}</h2><p>${sheetIntroText()}</p></div>
+      </div>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--locked-bg)"></span>2026 realizado (jan–jul)</span>
+        <span><span class="swatch" style="background:var(--white-cell)"></span>2026 orçado (ago–dez)</span>
+        <span><span class="swatch" style="background:var(--edit-bg)"></span>2027 (editável)</span>
+      </div>
+      <div class="table-wrap"><table id="tbl-${sheet.key}"></table></div>
+    </div>`
+  ).join('');
+
+  document.querySelectorAll('#dynamicNavSlot .navbtn').forEach(btn=>
+    btn.addEventListener('click', ()=> switchTab(btn.dataset.tab))
+  );
+}
 
 function rebuildAll(){
   const nomeArea = area().nome || currentArea;
@@ -1293,21 +1488,19 @@ function rebuildAll(){
   const badgeResumo = document.getElementById('areaBadgeResumo');
   if(badgeResumo) badgeResumo.textContent = nomeArea;
   document.getElementById('footResponsavel').textContent = area().submission ? area().submission.nome : (visitorName || RESPONSAVEL_PADRAO);
-  buildEditableTable('tbl-demais','demais','Demais Despesas Diretas');
 
-  const hasRh = area().rh && area().rh.length > 0;
-  const hasSc = area().sc && area().sc.length > 0;
-  document.querySelector('.navbtn[data-tab="rh"]').classList.toggle('hidden', !hasRh);
-  document.querySelector('.navbtn[data-tab="sc"]').classList.toggle('hidden', !hasSc);
-  if(hasRh) buildEditableTable('tbl-rh','rh','Serviços de RH');
-  if(hasSc) buildEditableTable('tbl-sc','sc','Serviços Contratados');
-  // se a aba ativa não existe nesta área, volta para o Resumo
+  renderNavAndPanels();
+  area().sheets.forEach(sheet => buildEditableTable(sheet.key));
+
+  // se a aba ativa não existe mais nesta área, volta para o Resumo
   const activeTab = document.querySelector('.navbtn.active')?.dataset.tab;
-  if((activeTab==='rh' && !hasRh) || (activeTab==='sc' && !hasSc)) switchTab('resumo');
+  const existeAqui = activeTab==='resumo' || activeTab==='config' || area().sheets.some(s=>s.key===activeTab);
+  if(!existeAqui) switchTab('resumo');
 
   attachInputHandlers();
   renderResumo();
 }
+
 
 // ---------------------------------------------------------------------------
 // Init
@@ -1317,22 +1510,30 @@ function areaLink(id){
 }
 
 (async function init(){
-  // Testa ativamente se o armazenamento existe neste ambiente (não existe se o arquivo for aberto fora da Claude).
-  try{
-    if(typeof window.storage === 'undefined' || !window.storage) throw new Error('no storage');
-    await window.storage.set('__healthcheck__', '1', true); // set (não get) evita falso-positivo de "chave inexistente"
-  }catch(e){ storageOK = false; showNoStorageBanner(); }
+  // Checagem só local (sem chamada de rede): se window.storage nem existe, é porque o arquivo
+  // foi aberto fora do ambiente da Claude e sem Supabase configurado. Qualquer falha real de
+  // conexão (ex: chave errada, rede fora) já é detectada e avisada quando o primeiro salvamento
+  // de verdade falhar (ver showNoStorageBanner em saveConfig/saveArea) — não precisamos gastar
+  // uma chamada de rede extra só para "testar" antes de carregar os dados.
+  if(typeof window.storage === 'undefined' || !window.storage){ storageOK = false; showNoStorageBanner(); }
+
+  const urlArea = new URLSearchParams(location.search).get('area');
+
+  // Renderização otimista: os dados de 2026 (e a área "rh" de fábrica) já vêm dentro do
+  // próprio arquivo — não dependem do Supabase. Mostramos a tela JÁ, com o que temos, em vez
+  // de esperar a rede responder para só então desenhar algo. Assim que o banco responder
+  // (mais abaixo), a tela é atualizada de novo, silenciosamente, com o que foi preenchido.
+  if(!urlArea || urlArea === 'rh'){ rebuildAll(); }
 
   await loadConfig();
   populateAreaSelectors();
 
   // Link direto por área (?area=xxx): entra direto, sem tela de senha — é o "link do gestor".
-  const urlArea = new URLSearchParams(location.search).get('area');
   if(urlArea && CONFIG.areas.find(a=>a.id===urlArea)){
     currentArea = urlArea;
     const ok = await loadArea(currentArea);
     // só cria uma área vazia se ela não existir NEM salva NEM pré-carregada (ex: RH já vem com dados de fábrica)
-    if(!ok && !AREAS[currentArea]){ const cfg = CONFIG.areas.find(a=>a.id===urlArea); AREAS[currentArea] = {nome:cfg.nome, demais:[], rh:[], sc:[], submission:null, resumoFixed:false}; }
+    if(!ok && !AREAS[currentArea]){ const cfg = CONFIG.areas.find(a=>a.id===urlArea); AREAS[currentArea] = {nome:cfg.nome, sheets:[{key:'demais', nome:'Despesas', allowAdd:false, rows:[]}], submission:null}; }
     rebuildAll();
     return;
   }
@@ -1342,6 +1543,7 @@ function areaLink(id){
     currentArea = CONFIG.areas[0] ? CONFIG.areas[0].id : 'rh';
     await loadArea(currentArea);
     rebuildAll();
+
   }
 })();
 </script>
