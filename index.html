@@ -234,12 +234,13 @@
     <img class="logo" alt="logo">
     <h2 style="margin:0 0 6px; font-size:16px;">Orçamento 2027</h2>
 
+    <form id="gateForm" autocomplete="on">
     <!-- PASSO 0a: e-mail -->
     <div id="gateStep0a">
       <p style="font-size:12.5px; color:#666; margin:0 0 12px;">Informe seu e-mail para continuar:</p>
-      <input id="gateEmail" type="email" placeholder="seuemail@empresa.com" autocomplete="email">
+      <input id="gateEmail" type="email" name="username" placeholder="seuemail@empresa.com" autocomplete="username">
       <div class="err" id="gateEmailErr"></div>
-      <button class="btn primary lg" id="gateEmailContinuar" style="width:100%; margin-top:6px;">Continuar</button>
+      <button type="button" class="btn primary lg" id="gateEmailContinuar" style="width:100%; margin-top:6px;">Continuar</button>
     </div>
 
     <!-- PASSO 0b: senha (criar, no 1º acesso, ou informar, se já existe) -->
@@ -249,12 +250,16 @@
         <span id="gateEmailAtual" style="font-weight:800; color:var(--dark);"></span>
       </p>
       <p style="font-size:12.5px; color:#666; margin:10px 0 8px;" id="gateSenhaTexto">Digite sua senha:</p>
-      <input id="gatePass" type="password" placeholder="Senha" autocomplete="current-password">
-      <input id="gatePassConfirma" type="password" placeholder="Confirme a senha" class="hidden" style="margin-top:6px;">
+      <input id="gatePass" type="password" name="password" placeholder="Senha" autocomplete="current-password">
+      <input id="gatePassConfirma" type="password" name="new-password-confirm" placeholder="Confirme a senha" class="hidden" style="margin-top:6px;" autocomplete="new-password">
       <div class="err" id="gatePassErr"></div>
-      <button class="btn primary lg" id="gatePassContinuar" style="width:100%; margin-top:6px;">Entrar</button>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#666; margin-top:8px; cursor:pointer;">
+        <input type="checkbox" id="gateLembrarSenha" checked style="width:auto; margin:0;"> Lembrar meu e-mail e senha neste navegador
+      </label>
+      <button type="button" class="btn primary lg" id="gatePassContinuar" style="width:100%; margin-top:6px;">Entrar</button>
       <span class="admin-link" id="gateEsqueciSenha" style="display:block; text-align:center; margin-top:8px;">Esqueci minha senha</span>
     </div>
+    </form>
 
     <!-- PASSO 1: escolher a Diretoria -->
     <div id="gateStep1" class="hidden">
@@ -544,6 +549,16 @@ const SUPABASE_ANON_KEY = 'sb_publishable_dirM4K9XY9J8x-XYJmv7zQ_BXacoOL9';
         const { error } = await client.from('storage_kv').upsert({ key, value: JSON.parse(value) });
         if(error) throw error;
         return { key, value, shared };
+      },
+      async delete(key, shared){
+        // Faltava esse método inteiro — "Resetar senha" no admin chamava window.storage.delete
+        // pra apagar o hash salvo, mas como ele não existia aqui, toda chamada só disparava um
+        // TypeError (silenciado pelo catch vazio de quem chamou) e a senha antiga nunca saía do
+        // Supabase de verdade. Por fora parecia que resetou (sem erro na tela), mas por dentro
+        // a pessoa continuava com a senha de sempre — só que sem lembrar mais qual era.
+        const { error } = await client.from('storage_kv').delete().eq('key', key);
+        if(error) throw error;
+        return { key, deleted: true, shared };
       },
     };
   }catch(e){
@@ -3675,8 +3690,20 @@ function renderAcessoList(){
     btn.addEventListener('click', async ()=>{
       const email = btn.dataset.resetSenha;
       if(!confirm(`Resetar a senha de ${email}? Na próxima vez que essa pessoa entrar, vai poder criar uma senha nova (como se fosse o primeiro acesso).`)) return;
-      try{ await window.storage.delete(keyForSenha(email), true); }catch(e){}
-      toast(`Senha de ${email} resetada.`);
+      try{
+        // Antes usava window.storage.delete — trocado por um "set" gravando null, porque
+        // apagar a linha pode esbarrar em permissão de DELETE não liberada nas regras do
+        // Supabase (RLS), mesmo com o código certo. "set"/upsert é o mesmo tipo de operação
+        // que já funciona pra gravar senha nova, então não depende de nenhuma permissão nova.
+        // Usa "" (string vazia) em vez de null — o banco provavelmente tem uma restrição de
+        // "não pode ser nulo" na coluna, então gravar null de verdade é rejeitado pelo
+        // Supabase (é esse o erro que aparecia). String vazia não é NULL do banco, então passa.
+        await window.storage.set(keyForSenha(email), JSON.stringify(""), true);
+        toast(`Senha de ${email} resetada.`);
+      }catch(e){
+        console.error('Erro ao resetar senha:', e);
+        alert(`Não consegui resetar a senha de ${email} — tenta de novo em alguns segundos. Se continuar falhando, pode ser problema de conexão com o Supabase.`);
+      }
     });
   });
   div.querySelectorAll('[data-remover-acesso]').forEach(btn=>{
@@ -3842,6 +3869,35 @@ function showGate(){
   const gate = document.getElementById('gate');
   showGateStep0a();
   gate.classList.remove('hidden');
+  // "Lembrar meu e-mail e senha neste navegador": pré-preenche se tiver algo salvo aqui (fica
+  // só no localStorage deste navegador/computador — nunca é enviado a lugar nenhum, nem entra
+  // no Supabase). Isso é diferente do gerenciador de senhas do próprio navegador (que também
+  // deve oferecer salvar, já que agora o login é um <form> de verdade).
+  try{
+    const salvo = JSON.parse(localStorage.getItem('orc2027_login') || 'null');
+    if(salvo && salvo.email){ document.getElementById('gateEmail').value = salvo.email; }
+  }catch(e){}
+}
+// Guarda (ou apaga) o e-mail+senha deste navegador, conforme a caixinha "Lembrar" na tela de
+// senha. Guardado em texto puro no localStorage — é uma conveniência local (só entra automático
+// de novo neste mesmo navegador), não é o mesmo tipo de proteção de uma senha só-de-hash no
+// banco, mas é exatamente o que foi pedido: preencher sozinho da próxima vez.
+function salvarOuEsquecerLoginLocal(email, senha){
+  const lembrar = document.getElementById('gateLembrarSenha').checked;
+  try{
+    if(lembrar) localStorage.setItem('orc2027_login', JSON.stringify({email, senha}));
+    else localStorage.removeItem('orc2027_login');
+  }catch(e){ /* localStorage bloqueado (modo privado etc.) — sem problema, só não lembra */ }
+  // Pede pro PRÓPRIO gerenciador de senhas do navegador (não é nosso localStorage) oferecer
+  // salvar essa credencial — mais confiável que só torcer pra heurística de "isso parece um
+  // formulário de login" funcionar, já que aqui nunca tem uma submissão de formulário de
+  // verdade (é tudo JS). Só existe no Chrome/Edge por enquanto; nos outros, não faz nada.
+  if(lembrar && window.PasswordCredential && navigator.credentials){
+    try{
+      const cred = new PasswordCredential({id: email, password: senha, name: email});
+      navigator.credentials.store(cred);
+    }catch(e){}
+  }
 }
 
 function showGateStep0a(){
@@ -3863,11 +3919,29 @@ async function showGateStep0b(email){
   const ehAdmin = ADMIN_EMAILS.includes(email);
   let jaTemSenha = ehAdmin; // administradores usam a senha fixa, não passam por "criar senha"
   if(!ehAdmin){
-    try{ await window.storage.get(keyForSenha(email), true); jaTemSenha = true; }
+    try{
+      const res = await window.storage.get(keyForSenha(email), true);
+      // Reset de senha agora grava "" (em vez de apagar a linha — ver botão "Resetar senha"),
+      // então "sem senha" é tanto a chave não existir quanto existir vazia ("" ou null).
+      const valorSalvo = res && res.value ? JSON.parse(res.value) : null;
+      jaTemSenha = !!valorSalvo;
+    }
     catch(e){ jaTemSenha = false; }
   }
   document.getElementById('gateSenhaTexto').textContent = jaTemSenha ? 'Digite sua senha:' : 'Primeiro acesso — crie uma senha:';
   document.getElementById('gatePassConfirma').classList.toggle('hidden', jaTemSenha);
+  // "current-password" (entrando) vs "new-password" (criando agora) — ajuda o gerenciador de
+  // senhas do navegador a saber se é login normal ou cadastro de senha nova.
+  document.getElementById('gatePass').autocomplete = jaTemSenha ? 'current-password' : 'new-password';
+
+  // Pré-preenche a senha se essa pessoa marcou "Lembrar" antes, neste mesmo navegador, pra esse
+  // mesmo e-mail (só faz sentido no fluxo de login normal, não no de criar senha pela 1ª vez).
+  if(jaTemSenha){
+    try{
+      const salvo = JSON.parse(localStorage.getItem('orc2027_login') || 'null');
+      if(salvo && salvo.email === email && salvo.senha){ document.getElementById('gatePass').value = salvo.senha; }
+    }catch(e){}
+  }
 }
 
 function showGateStep1(){
@@ -3893,6 +3967,16 @@ function showGateStep1(){
   });
 }
 
+// O login virou um <form> de verdade (pra navegador oferecer "salvar senha?"), mas os botões
+// continuam type="button" (cada passo tem sua própria lógica) — então Enter no campo precisa
+// ser tratado à mão, chamando o mesmo botão do passo visível no momento.
+['gateEmail'].forEach(id=> document.getElementById(id).addEventListener('keydown', (e)=>{
+  if(e.key==='Enter'){ e.preventDefault(); document.getElementById('gateEmailContinuar').click(); }
+}));
+['gatePass','gatePassConfirma'].forEach(id=> document.getElementById(id).addEventListener('keydown', (e)=>{
+  if(e.key==='Enter'){ e.preventDefault(); document.getElementById('gatePassContinuar').click(); }
+}));
+document.getElementById('gateForm').addEventListener('submit', (e)=> e.preventDefault());
 document.getElementById('gateEmailContinuar').addEventListener('click', async ()=>{
   const email = document.getElementById('gateEmail').value.trim().toLowerCase();
   if(!email || !email.includes('@') || !email.includes('.')){
@@ -3920,6 +4004,7 @@ document.getElementById('gatePassContinuar').addEventListener('click', async ()=
     areasPermitidasParaEmail = null; // admin vê tudo, não precisa de lista
     document.getElementById('navConsolidado').classList.remove('hidden');
     document.getElementById('navConfig').classList.remove('hidden');
+    salvarOuEsquecerLoginLocal(gateEmail, senha);
     showGateStep1();
     return;
   }
@@ -3940,6 +4025,7 @@ document.getElementById('gatePassContinuar').addEventListener('click', async ()=
     if(hashSalvo !== hashDigitado){ errEl.textContent = 'Senha incorreta.'; return; }
   }
 
+  salvarOuEsquecerLoginLocal(gateEmail, senha);
   areasPermitidasParaEmail = (CONFIG.acessos[gateEmail] && CONFIG.acessos[gateEmail].areas) || [];
   showGateStep1();
 });
