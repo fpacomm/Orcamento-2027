@@ -3386,7 +3386,7 @@ async function buildCQ3ConsolidadoSheet(wb){
     const areaObj = AREAS[cfg.id];
     if(!areaObj) continue;
     const responsavel = areaObj.submission ? (areaObj.submission.nome || '') : '';
-    const dataFn = cfg.id === 'despesas_area' ? cq3DataDespesasAreaFromArea : cq3DataFromArea;
+    const dataFn = cfg.id === 'despesas_area' ? cq3DataDespesasAreaFromArea : cfg.id === 'rescisoes_trabalhistas' ? cq3DataRescisoesFromArea : cq3DataFromArea;
     [2027, 2028].forEach(ano=>{
       const cq3Data = dataFn(areaObj, ano);
       for(let m=0; m<12; m++){
@@ -4851,6 +4851,14 @@ async function renderConsolidadoGeral(){
       t27 += sum12(r.meses_2027||[]);
       t28 += sum12(r.meses_2028||[]);
     }));
+    // Rescisões Trabalhistas não usa "sheets" (é uma lista de lançamentos) — sem isso aqui,
+    // essa área sempre somava 0 no Consolidado Geral mesmo com dado preenchido.
+    if(ar?.rescisoes){
+      (ar.registros||[]).forEach(row=>{
+        const am = anoMesRescisao(row.data);
+        if(am && row.valor){ if(am.ano===2027) t27 += row.valor; else t28 += row.valor; }
+      });
+    }
     const dir = cfg.diretoria || 'Geral';
     if(!porDiretoria[dir]) porDiretoria[dir] = {deps:[], t26:0, t27:0, t28:0};
     porDiretoria[dir].deps.push({id:cfg.id, nome:cfg.nome, t26, t27, t28, entregue: !!ar?.submission});
