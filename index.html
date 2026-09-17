@@ -506,13 +506,15 @@
         </div>
 
         <div class="card">
-          <h3>Áreas / Departamentos</h3>
-          <p class="desc">Cada área tem seu próprio Resumo + 3 abas de preenchimento. Defina uma senha por área para restringir o acesso — em branco para acesso livre.</p>
-          <div id="areaList"></div>
-          <div class="row-flex" style="margin-top:10px;">
-            <input id="newAreaName" placeholder="Nome da nova área (ex: Financeiro)" style="padding:9px 12px; border:1px solid var(--border); border-radius:8px; font-family:inherit;">
-            <input id="newAreaDiretoria" placeholder="Diretoria (ex: Finanças)" style="padding:9px 12px; border:1px solid var(--border); border-radius:8px; font-family:inherit;">
-            <button class="btn" id="btnAddArea">+ Adicionar área</button>
+          <h3 id="areaListToggle" style="cursor:pointer; user-select:none;">▸ Áreas / Departamentos <span style="font-weight:400; font-size:12px; color:var(--muted);">(clique para abrir)</span></h3>
+          <div id="areaListWrap" class="hidden">
+            <p class="desc">Cada área tem seu próprio Resumo + 3 abas de preenchimento. Defina uma senha por área para restringir o acesso — em branco para acesso livre. Hoje o controle de acesso é feito mesmo é pela lista "Quem tem acesso a quê" acima; isso aqui é só pra criar/renomear/remover uma área.</p>
+            <div id="areaList"></div>
+            <div class="row-flex" style="margin-top:10px;">
+              <input id="newAreaName" placeholder="Nome da nova área (ex: Financeiro)" style="padding:9px 12px; border:1px solid var(--border); border-radius:8px; font-family:inherit;">
+              <input id="newAreaDiretoria" placeholder="Diretoria (ex: Finanças)" style="padding:9px 12px; border:1px solid var(--border); border-radius:8px; font-family:inherit;">
+              <button class="btn" id="btnAddArea">+ Adicionar área</button>
+            </div>
           </div>
         </div>
 
@@ -1002,6 +1004,24 @@ function buscarCentroCustoVMT(valorDigitado){
 // Rescisões Trabalhistas — tabela de lançamento (manual, sem "sheets")
 // ---------------------------------------------------------------------------
 function novoIdRescisao(){ return 'resc_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); }
+// Valor digitado no formato brasileiro ("25.000,00" ou "-3.000,00") -> número. O campo é
+// type="text" (não "number") justamente pra aceitar ponto de milhar e vírgula decimal — um
+// input type="number" nativo rejeita esse formato inteiro.
+function parseValorBR(valor){
+  if(valor===null || valor===undefined || valor==='') return null;
+  let s = String(valor).trim().replace(/[^\d,.\-]/g,'');
+  if(s.includes(',')) s = s.replace(/\./g,'').replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+function formatarValorBR(v){
+  if(v===null || v===undefined || v==='') return '';
+  return Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function isoParaBR(iso){
+  const m = String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
 function novoRegistroRescisao(){
   return { id: novoIdRescisao(), contaTipo:'indenizacao', centroCustoInput:'', centroCusto:null,
     centroCustoNome:'', diretoria:'', admVendas:'', cargo:'', data:'', valor:null, comentarios:'' };
@@ -1053,13 +1073,30 @@ function atualizarCampoRescisao(id, campo, valor){
     if(elDir) elDir.value = row.diretoria;
     if(elAdm) elAdm.value = row.admVendas;
   } else if(campo === 'data'){
-    // Sem validar/travar enquanto digita (o navegador só entrega um valor completo aqui de
-    // qualquer forma) — datas fora de 2027/2028 simplesmente não entram no Resumo nem na CQ3
-    // (ver anoMesRescisao). O min/max do campo já orienta visualmente o gestor.
-    row.data = valor;
+    // Campo de texto puro (dd/mm/aaaa) — nada de <input type="date"> nativo, que em alguns
+    // navegadores entrega um valor "completo" pro JS antes mesmo do gestor terminar de digitar
+    // o ano, disparando o erro sem ele ter acabado de digitar. Só valida ao SAIR do campo
+    // (esse handler só roda no "change", nunca a cada tecla — ver buildLancamentoRescisoes).
+    const texto = (valor||'').trim();
+    const elData = document.getElementById('resc-data-'+id);
+    if(!texto){ row.data = ''; }
+    else {
+      const m = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const iso = m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : null;
+      const am = iso ? anoMesRescisao(iso) : null;
+      if(!am){
+        toast(m ? 'Data inválida — só são aceitos lançamentos de 2027 ou 2028.' : 'Data inválida — use o formato dd/mm/aaaa (ex: 31/12/2028).');
+        row.data = '';
+        if(elData) elData.value = '';
+        renderResumo();
+        scheduleSave();
+        return;
+      }
+      row.data = iso;
+      if(elData) elData.value = isoParaBR(iso);
+    }
   } else if(campo === 'valor'){
-    const num = valor===''? null : parseFloat(String(valor).replace(',', '.'));
-    row.valor = (num===null || isNaN(num)) ? null : num;
+    row.valor = parseValorBR(valor);
   } else {
     row[campo] = valor;
   }
@@ -1094,8 +1131,8 @@ function buildLancamentoRescisoes(){
       <td><input type="text" id="resc-dir-${row.id}" class="resc-input" readonly value="${(row.diretoria||'').replace(/"/g,'&quot;')}" style="background:var(--locked-bg);"></td>
       <td><input type="text" id="resc-adm-${row.id}" class="resc-input" readonly value="${(row.admVendas||'').replace(/"/g,'&quot;')}" style="background:var(--locked-bg);"></td>
       <td><input type="text" class="resc-input" data-resc-id="${row.id}" data-resc-campo="cargo" value="${(row.cargo||'').replace(/"/g,'&quot;')}"></td>
-      <td><input type="date" class="resc-input" data-resc-id="${row.id}" data-resc-campo="data" min="2027-01-01" max="2028-12-31" value="${row.data||''}"></td>
-      <td><input type="number" step="0.01" data-sheet="rescisoes" class="resc-input" data-resc-id="${row.id}" data-resc-campo="valor" value="${row.valor===null||row.valor===undefined?'':row.valor}"></td>
+      <td><input type="text" inputmode="numeric" id="resc-data-${row.id}" class="resc-input" data-resc-id="${row.id}" data-resc-campo="data" placeholder="dd/mm/aaaa" value="${isoParaBR(row.data)}"></td>
+      <td><input type="text" inputmode="decimal" class="resc-input" data-resc-id="${row.id}" data-resc-campo="valor" placeholder="0,00" value="${formatarValorBR(row.valor)}"></td>
       <td><input type="text" class="resc-input" data-resc-id="${row.id}" data-resc-campo="comentarios" value="${(row.comentarios||'').replace(/"/g,'&quot;')}"></td>
       <td><button type="button" class="btn delete-row-btn" data-resc-del="${row.id}" title="Excluir linha">×</button></td>
     </tr>`;
@@ -1113,8 +1150,19 @@ function buildLancamentoRescisoes(){
 
   table.querySelectorAll('.resc-input').forEach(el=>{
     const handler = (e)=> atualizarCampoRescisao(e.target.dataset.rescId, e.target.dataset.rescCampo, e.target.value);
-    if(el.tagName==='SELECT') el.onchange = handler; else el.onchange = handler;
-    if(el.type==='text' || el.type==='number') el.oninput = handler;
+    el.onchange = handler;
+    // Data só valida no "change" (ao sair do campo) — nunca a cada tecla, senão o navegador
+    // pode disparar erro no meio da digitação do ano. Os demais campos de texto continuam
+    // atualizando ao vivo (sem reconstruir a linha inteira, então não perdem o foco).
+    if((el.type==='text' || el.type==='number') && el.dataset.rescCampo!=='data') el.oninput = handler;
+  });
+  // Valor: reformata a própria célula (ex: "-1000" -> "-1.000,00") só ao sair dela — nunca
+  // enquanto o gestor ainda está digitando, senão o cursor pula de lugar a cada tecla.
+  table.querySelectorAll('[data-resc-campo="valor"]').forEach(el=>{
+    el.addEventListener('blur', (e)=>{
+      const row = (AREAS.rescisoes_trabalhistas.registros||[]).find(r=>r.id===e.target.dataset.rescId);
+      e.target.value = row ? formatarValorBR(row.valor) : '';
+    });
   });
   table.querySelectorAll('[data-resc-del]').forEach(btn=>{
     btn.onclick = ()=> removeRegistroRescisao(btn.dataset.rescDel);
@@ -4522,6 +4570,14 @@ function renderAreaList(){
   });
 }
 
+document.getElementById('areaListToggle').addEventListener('click', ()=>{
+  const wrap = document.getElementById('areaListWrap');
+  const abrindo = wrap.classList.contains('hidden');
+  wrap.classList.toggle('hidden');
+  document.getElementById('areaListToggle').innerHTML = abrindo
+    ? '▾ Áreas / Departamentos <span style="font-weight:400; font-size:12px; color:var(--muted);">(clique para fechar)</span>'
+    : '▸ Áreas / Departamentos <span style="font-weight:400; font-size:12px; color:var(--muted);">(clique para abrir)</span>';
+});
 document.getElementById('btnAddArea').addEventListener('click', async ()=>{
   const nameInput = document.getElementById('newAreaName');
   const diretoriaInput = document.getElementById('newAreaDiretoria');
@@ -4564,6 +4620,8 @@ function needsGate(){ return CONFIG.areas.length>1 || CONFIG.areas.some(a=>a.pas
 let gateSelectedAreaId = null;
 let gateEmail = '';
 let areasPermitidasParaEmail = null; // null = ainda não logou; [] = logou mas sem nenhuma área
+let pretendedAreaFromLink = null; // ?area=xxx da URL — só usado pra pular a tela de escolha
+  // de diretoria/área DEPOIS de logar com e-mail+senha; nunca pula o login em si (ver init()).
 
 // Hash simples (SHA-256) só pra não guardar a senha em texto puro — não é criptografia de
 // nível bancário (o app roda 100% no navegador), mas evita que a senha apareça "pronta pra
@@ -4601,6 +4659,7 @@ function sairDoSite(){
   visitorName = '';
   areasPermitidasParaEmail = null; // null = ainda não logou (mesmo estado inicial da página)
   currentArea = null;
+  pretendedAreaFromLink = null; // não deixa o link antigo pular a tela de escolha pra um login diferente
   showGate();
 }
 document.getElementById('btnSair').addEventListener('click', sairDoSite);
@@ -4732,6 +4791,7 @@ document.getElementById('gatePassContinuar').addEventListener('click', async ()=
     document.getElementById('navConsolidado').classList.remove('hidden');
     document.getElementById('navConfig').classList.remove('hidden');
     salvarOuEsquecerLoginLocal(gateEmail, senha);
+    if(pretendedAreaFromLink){ const alvo = pretendedAreaFromLink; pretendedAreaFromLink = null; await entrarNaArea(alvo); return; }
     showGateStep1();
     return;
   }
@@ -4762,6 +4822,10 @@ document.getElementById('gatePassContinuar').addEventListener('click', async ()=
     areasPermitidasParaEmail = (CONFIG.acessos[gateEmail] && CONFIG.acessos[gateEmail].areas) || [];
   }
   salvarOuEsquecerLoginLocal(gateEmail, senha);
+  // Link direto (?area=xxx): só pula pra ela DEPOIS do login normal, e só se essa área
+  // realmente estiver liberada pra esse e-mail — nunca antes de validar a senha.
+  const podeIrDireto = pretendedAreaFromLink && (ehAdmin || (areasPermitidasParaEmail||[]).includes(pretendedAreaFromLink));
+  if(podeIrDireto){ const alvo = pretendedAreaFromLink; pretendedAreaFromLink = null; await entrarNaArea(alvo); return; }
   showGateStep1();
 });
 
@@ -5945,7 +6009,11 @@ function reconciliarContasConhecidas(){
 // dá pra trocar) as áreas que o e-mail logado tem permissão de ver.
 // ---------------------------------------------------------------------------
 function areasQueEsteEmailPodeVer(){
-  if(!gateEmail || ehAdminAtual(gateEmail)) return CONFIG.areas;
+  // "Sem e-mail logado" tem que dar lista vazia, NUNCA "todas as áreas" — só admin de
+  // verdade vê tudo. (Antes as duas coisas caíam na mesma regra e qualquer sessão sem
+  // login válido enxergava o menu inteiro.)
+  if(!gateEmail) return [];
+  if(ehAdminAtual(gateEmail)) return CONFIG.areas;
   const permitidas = areasPermitidasParaEmail || (CONFIG.acessos[gateEmail] && CONFIG.acessos[gateEmail].areas) || [];
   return CONFIG.areas.filter(a=>permitidas.includes(a.id));
 }
@@ -6045,10 +6113,12 @@ function aplicarTravaEntrega(){
     document.querySelectorAll('input[type="checkbox"][data-rateio-row]').forEach(chk=> chk.disabled = true);
     document.querySelectorAll('.delete-row-btn').forEach(btn=> btn.disabled = true);
     document.querySelectorAll('.add-row input, .add-row select, .add-row button').forEach(el=> el.disabled = true);
+    document.querySelectorAll('.resc-input').forEach(el=> el.disabled = true);
   } else {
     document.querySelectorAll('input[type="checkbox"][data-rateio-row]').forEach(chk=> chk.disabled = false);
     document.querySelectorAll('.delete-row-btn').forEach(btn=> btn.disabled = false);
     document.querySelectorAll('.add-row input, .add-row select, .add-row button').forEach(el=> el.disabled = false);
+    document.querySelectorAll('.resc-input').forEach(el=> { if(!el.readOnly) el.disabled = false; });
   }
   const btnEntregar = document.getElementById('btnEntregar');
   if(btnEntregar){
@@ -6124,6 +6194,13 @@ function areaLink(id){
   if(typeof window.storage === 'undefined' || !window.storage){ storageOK = false; showNoStorageBanner(); }
 
   const urlArea = new URLSearchParams(location.search).get('area');
+  // Só guarda a INTENÇÃO de ir pra essa área — não pula mais o login por causa dela (ver
+  // gatePassContinuar, que é o único lugar que efetivamente entra na área, e só depois de
+  // validar e-mail+senha e confirmar que essa área está liberada pra esse e-mail). Antes,
+  // recarregar a página ou usar voltar/avançar com essa URL entrava direto sem senha e,
+  // pior, deixava o e-mail "vazio" internamente — o que fazia o menu lateral mostrar TODAS
+  // as áreas do sistema pra qualquer um (ver areasQueEsteEmailPodeVer).
+  pretendedAreaFromLink = (urlArea && CONFIG.areas.find(a=>a.id===urlArea)) ? urlArea : null;
 
   // Renderização otimista: os dados de 2026 (e a área "rh" de fábrica) já vêm dentro do
   // próprio arquivo — não dependem do Supabase. Preparamos a tela JÁ, com o que temos, mas
@@ -6134,22 +6211,9 @@ function areaLink(id){
   await loadConfig();
   populateAreaSelectors();
 
-  // Link direto por área (?area=xxx): entra direto, sem tela de senha — é o "link do gestor".
-  if(urlArea && CONFIG.areas.find(a=>a.id===urlArea)){
-    currentArea = urlArea;
-    const ok = await loadArea(currentArea);
-    // só cria uma área vazia se ela não existir NEM salva NEM pré-carregada (ex: RH já vem com dados de fábrica)
-    if(!ok && !AREAS[currentArea]){ const cfg = CONFIG.areas.find(a=>a.id===urlArea); AREAS[currentArea] = {nome:cfg.nome, sheets:[{key:'demais', nome:'Despesas', allowAdd:false, rows:[]}], submission:null}; }
-    await sincronizarUniformesNoDepartamento(currentArea);
-    rebuildAll();
-    document.getElementById('app').classList.remove('hidden');
-  document.getElementById('sidebar').classList.remove('hidden');
-    return;
-  }
-
   if(needsGate()){ showGate(); }
   else {
-    currentArea = CONFIG.areas[0] ? CONFIG.areas[0].id : 'rh';
+    currentArea = pretendedAreaFromLink || (CONFIG.areas[0] ? CONFIG.areas[0].id : 'rh');
     await loadArea(currentArea);
     await sincronizarUniformesNoDepartamento(currentArea);
     rebuildAll();
