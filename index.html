@@ -3213,15 +3213,39 @@ async function buildEditableSheetExcel(wb, sheetName, rows, tituloArea, allowAdd
 // Versão parametrizada (recebe a área explicitamente) — usada tanto pela área atual (export
 // Excel) quanto pela sincronização da CQ3 Consolidada (ver sincronizarCQ3Consolidado), que
 // precisa calcular pra QUALQUER área, não só a que está aberta na tela no momento.
-function cq3DataFromArea(areaObj, ano){
+// Determina o "LAYOUT" (origem) de uma linha da CQ3 — indica de onde ela vem: o nome do menu
+// (Demais Despesas Diretas / Serviços Contratados / Serviços Contratados TI) pras abas padrão
+// de departamento (buildDeptSheets) e pras "pastas" de Lojas/Supervisão, ou o nome da própria
+// área/aba quando ela não se encaixa em nenhum desses 3 grupos (ex: Comunicação, Despesas com
+// Propaganda, Ações de Marketing Digital, Tarifas Bancárias, Assessoria, Serviços Contratados - RH).
+const CHAVES_SC_LAYOUT = ['servicos_contratados','sc_fornecedor','sc_pct_rateio','sc_calculado','lj_sc_fornecedor','lj_sc_pct_rateio','lj_sc_calculado'];
+function layoutParaSheet(areaId, sheetKey, sheetNome, areaNome){
+  if(areaId === 'despesas_propaganda') return 'Despesas com Propaganda';
+  if(areaId === 'acoes_mkt_digital') return 'Ações de Marketing Digital';
+  if(areaId === 'comunicacao') return 'Comunicação';
+  if(sheetKey === 'demais') return 'Demais Despesas Diretas';
+  if(CHAVES_SC_LAYOUT.includes(sheetKey)) return 'Serviços Contratados';
+  if(sheetKey === 'servicos_contratados_ti') return 'Serviços Contratados TI';
+  if(sheetKey === 'servicos_contratados_rh') return 'Serviços Contratados - RH';
+  if(sheetKey === 'tarifas_bancarias') return 'Tarifas Bancárias';
+  if(sheetKey === 'assessoria') return 'Assessoria';
+  // Lojas/Supervisão: qualquer outra "pasta" (Locação de Bens, Material de Consumo, Uniformes
+  // etc.) que não seja SC/SC-TI faz parte do mesmo grupo "Demais Despesas Diretas" do menu.
+  if(areaId === 'lojas' || areaId === 'supervisao') return 'Demais Despesas Diretas';
+  return areaNome || sheetNome;
+}
+function cq3DataFromArea(areaObj, ano, areaId){
   const mesesKey = ano===2028 ? 'meses_2028' : 'meses_2027';
   const grupos = new Map(); // "nome||empresa||canal||cc" -> {...}
   const ordem = [];
+  const cfgArea = areaId ? CONFIG.areas.find(a=>a.id===areaId) : null;
+  const areaNome = (cfgArea && cfgArea.nome) || areaObj.nome || areaId;
   (areaObj.sheets||[]).forEach(sheet=>{
     // Abas de referência/cálculo intermediário (ex: Fornecedor e % Rateio de Serviços
     // Contratados na Supervisão) não entram na CQ3 — só a aba final calculada conta, pra não
     // somar o mesmo valor mais de uma vez (mesma regra do Resumo, ver resumoRowsComputed).
     if(sheet.excluirDoResumo) return;
+    const layout = layoutParaSheet(areaId, sheet.key, sheet.nome, areaNome);
     sheet.rows.forEach(row=>{
       const cc = row.centroCusto ?? null;
       // Empresa/Canal entram na chave (não só CC) porque no Serviços Contratados TI
@@ -3230,7 +3254,7 @@ function cq3DataFromArea(areaObj, ano){
       // numa linha só na CQ3.
       const chave = row.nome_conta + '||' + (row.empresa||'') + '||' + (row.canal||'') + '||' + cc;
       if(!grupos.has(chave)){
-        grupos.set(chave, {nome:row.nome_conta, codigo:row.conta, centroCusto:cc, centroCustoNome:row.centroCustoNome, empresa:row.empresa||'VMT', meses:new Array(12).fill(0)});
+        grupos.set(chave, {nome:row.nome_conta, codigo:row.conta, centroCusto:cc, centroCustoNome:row.centroCustoNome, empresa:row.empresa||'VMT', meses:new Array(12).fill(0), layout});
         ordem.push(chave);
       }
       const g = grupos.get(chave);
@@ -3238,11 +3262,12 @@ function cq3DataFromArea(areaObj, ano){
       if(!row.isRateio) meses.forEach((v,m)=> g.meses[m] += Number(v)||0);
       if(!g.codigo) g.codigo = row.conta;
       if(!g.centroCusto && cc) g.centroCusto = cc;
+      if(!g.layout) g.layout = layout;
     });
   });
   return ordem.map(k=>grupos.get(k));
 }
-function cq3DataFromSheets(ano){ return cq3DataFromArea(area(), ano); }
+function cq3DataFromSheets(ano){ return cq3DataFromArea(area(), ano, currentArea); }
 
 // Monta os dados da CQ3 igual cq3DataFromArea, mas específico pra Despesas com Área: a
 // pasta "Crédito PIS e COFINS" (combinada, usada só pra exibir na tela) é substituída aqui por
@@ -3256,7 +3281,7 @@ function cq3DataDespesasAreaFromArea(areaObj, ano){
   function addGrupo(nome, codigo, cc, ccNome, valores12){
     const chave = nome + '||' + cc;
     if(!grupos.has(chave)){
-      grupos.set(chave, {nome, codigo, centroCusto:cc, centroCustoNome:ccNome, meses:new Array(12).fill(0)});
+      grupos.set(chave, {nome, codigo, centroCusto:cc, centroCustoNome:ccNome, meses:new Array(12).fill(0), layout:'Despesas com Área'});
       ordem.push(chave);
     }
     const g = grupos.get(chave);
@@ -3295,7 +3320,7 @@ function cq3DataRescisoesFromArea(areaObj, ano){
     const contaInfo = CONTA_RESCISAO[row.contaTipo] || CONTA_RESCISAO.indenizacao;
     const chave = contaInfo.codigo + '||' + row.centroCusto;
     if(!grupos.has(chave)){
-      grupos.set(chave, {nome:contaInfo.nome, codigo:contaInfo.codigo, centroCusto:row.centroCusto, centroCustoNome:row.centroCustoNome, empresa:'VMT', meses:new Array(12).fill(0)});
+      grupos.set(chave, {nome:contaInfo.nome, codigo:contaInfo.codigo, centroCusto:row.centroCusto, centroCustoNome:row.centroCustoNome, empresa:'VMT', meses:new Array(12).fill(0), layout:'Rescisões Trabalhistas'});
       ordem.push(chave);
     }
     grupos.get(chave).meses[am.mesIdx] += row.valor;
@@ -3323,7 +3348,7 @@ async function sincronizarCQ3Consolidado(areaId){
     const areaNome = cfg ? cfg.nome : (areaObj.nome || areaId);
     const diretoria = cfg ? (cfg.diretoria || '') : '';
     const responsavel = areaObj.submission ? (areaObj.submission.nome || '') : '';
-    const dataFn = areaId === 'despesas_area' ? cq3DataDespesasAreaFromArea : areaId === 'rescisoes_trabalhistas' ? cq3DataRescisoesFromArea : cq3DataFromArea;
+    const dataFn = areaId === 'despesas_area' ? cq3DataDespesasAreaFromArea : areaId === 'rescisoes_trabalhistas' ? cq3DataRescisoesFromArea : (ao,an)=>cq3DataFromArea(ao,an,areaId);
     const linhas = [];
     anosParaSincronizarCQ3(areaId).forEach(ano=>{
       dataFn(areaObj, ano).forEach(g=>{
@@ -3336,7 +3361,7 @@ async function sincronizarCQ3Consolidado(areaId){
             cod_conta: g.codigo || null, cod_c_custo: g.centroCusto ?? null,
             movimento: valor, referente_a: g.nome,
             nome_centro: g.centroCustoNome || areaNome, responsavel,
-            area_id: areaId, diretoria,
+            area_id: areaId, diretoria, layout: g.layout || null,
           });
         }
       });
@@ -3359,7 +3384,7 @@ async function sincronizarCQ3Consolidado(areaId){
 async function buildCQ3Sheet(wb, resumoData, responsavelNome, dataFn){
   dataFn = dataFn || cq3DataFromSheets;
   const ws = wb.addWorksheet('CQ3');
-  const headers = ['ID','Mês','Ano','Empresa','Data Saldo','Cod Conta','Cod C Custo','Tipo do Sld','Deb na Data','Crd na Data','Movimento','REFERENTE A','Nome do Centro','Responsavel'];
+  const headers = ['ID','Mês','Ano','Empresa','Data Saldo','Cod Conta','Cod C Custo','Tipo do Sld','Deb na Data','Crd na Data','Movimento','REFERENTE A','Nome do Centro','Responsavel','LAYOUT'];
   headers.forEach((h,i)=>{ const c = ws.getCell(1,i+1); c.value=h; c.fill=FILLS.dark; c.font=FONT_WHITE_BOLD; });
 
   let r = 2;
@@ -3387,6 +3412,7 @@ async function buildCQ3Sheet(wb, resumoData, responsavelNome, dataFn){
         ws.getCell(r,12).value = row.nome;
         ws.getCell(r,13).value = row.centroCustoNome || area().nome || currentArea;
         ws.getCell(r,14).value = responsavelNome || ''; // em branco por enquanto — controle de acesso por responsável vem depois
+        ws.getCell(r,15).value = row.layout || '';
         idx++; r++;
       });
     }
@@ -3394,6 +3420,7 @@ async function buildCQ3Sheet(wb, resumoData, responsavelNome, dataFn){
   });
   ws.columns.forEach(c=> c.width = 14);
   ws.getColumn(12).width = 30;
+  ws.getColumn(15).width = 26;
   ws.views = [{state:'frozen', ySplit:1}];
 
   // linha de conferência: total de "Movimento" (sem rateio) x Total do Resumo (com rateio), por ano
@@ -3426,7 +3453,7 @@ async function buildCQ3Sheet(wb, resumoData, responsavelNome, dataFn){
 // (ver sincronizarCQ3Consolidado) — aqui só muda o destino (Excel em vez do Supabase).
 async function buildCQ3ConsolidadoSheet(wb){
   const ws = wb.addWorksheet('CQ3 Consolidado');
-  const headers = ['ID','Mês','Ano','Empresa','Data Saldo','Cod Conta','Cod C Custo','Tipo do Sld','Deb na Data','Crd na Data','Movimento','REFERENTE A','Nome do Centro','Responsável','Área','Diretoria'];
+  const headers = ['ID','Mês','Ano','Empresa','Data Saldo','Cod Conta','Cod C Custo','Tipo do Sld','Deb na Data','Crd na Data','Movimento','REFERENTE A','Nome do Centro','Responsável','Área','Diretoria','LAYOUT'];
   headers.forEach((h,i)=>{ const c = ws.getCell(1,i+1); c.value=h; c.fill=FILLS.dark; c.font=FONT_WHITE_BOLD; });
   let r = 2, idx = 1;
   for(const cfg of CONFIG.areas){
@@ -3434,7 +3461,7 @@ async function buildCQ3ConsolidadoSheet(wb){
     const areaObj = AREAS[cfg.id];
     if(!areaObj) continue;
     const responsavel = areaObj.submission ? (areaObj.submission.nome || '') : '';
-    const dataFn = cfg.id === 'despesas_area' ? cq3DataDespesasAreaFromArea : cfg.id === 'rescisoes_trabalhistas' ? cq3DataRescisoesFromArea : cq3DataFromArea;
+    const dataFn = cfg.id === 'despesas_area' ? cq3DataDespesasAreaFromArea : cfg.id === 'rescisoes_trabalhistas' ? cq3DataRescisoesFromArea : (ao,an)=>cq3DataFromArea(ao,an,cfg.id);
     [2027, 2028].forEach(ano=>{
       const cq3Data = dataFn(areaObj, ano);
       for(let m=0; m<12; m++){
@@ -3458,6 +3485,7 @@ async function buildCQ3ConsolidadoSheet(wb){
           ws.getCell(r,14).value = responsavel;
           ws.getCell(r,15).value = cfg.nome;
           ws.getCell(r,16).value = cfg.diretoria || '';
+          ws.getCell(r,17).value = row.layout || '';
           idx++; r++;
         });
       }
@@ -3467,6 +3495,7 @@ async function buildCQ3ConsolidadoSheet(wb){
   ws.getColumn(12).width = 30;
   ws.getColumn(15).width = 26;
   ws.getColumn(16).width = 22;
+  ws.getColumn(17).width = 26;
   ws.views = [{state:'frozen', ySplit:1}];
 }
 
